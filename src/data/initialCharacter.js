@@ -22,10 +22,10 @@ const initMax = computeMaxValues(INITIAL_ATTRIBUTES);
 
 // ─── Equipamentos iniciais ────────────────────────────────────────────────────
 const emptyArmorSlot = () => ({
-  armadura: 0, resMagica: 0, efeitos: '', durabilidade: 10, durabilidadeMax: 10,
+  armadura: 0, resMagica: 0, reputacao: 0, efeitos: '', durabilidade: 10, durabilidadeMax: 10,
 });
 const emptyHandSlot = () => ({ nome: '', dano: '', efeitos: '' });
-const emptyAccessory = () => ({ nome: '', armadura: 0, resMagica: 0, efeitos: '' });
+const emptyAccessory = () => ({ nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '' });
 
 // ─── Personagem inicial ───────────────────────────────────────────────────────
 export const INITIAL_CHARACTER = {
@@ -158,16 +158,19 @@ export const COMPUTED_STATUS_KEYS = ['vida', 'energia', 'mana', 'forcaDeVontade'
 
 // Cálculo dos totais de defesa (apenas peças com durabilidade > 0)
 export function computeDefenseTotals(equipment, accessories) {
-  const armorBase   = ARMOR_SLOTS.reduce((s, k) => {
+  const armorBase = ARMOR_SLOTS.reduce((s, k) => {
     const e = equipment[k];
-    return e.durabilidade > 0 ? { a: s.a + e.armadura, m: s.m + e.resMagica } : s;
-  }, { a: 0, m: 0 });
+    return e.durabilidade > 0
+      ? { a: s.a + e.armadura, m: s.m + e.resMagica, r: s.r + (e.reputacao || 0) }
+      : s;
+  }, { a: 0, m: 0, r: 0 });
   const accBonus = accessories.reduce(
-    (s, a) => ({ a: s.a + (a.armadura || 0), m: s.m + (a.resMagica || 0) }),
-    { a: 0, m: 0 }
+    (s, a) => ({ a: s.a + (a.armadura || 0), m: s.m + (a.resMagica || 0), r: s.r + (a.reputacao || 0) }),
+    { a: 0, m: 0, r: 0 }
   );
   return {
     totalArmadura:  armorBase.a + accBonus.a,
     totalResMagica: armorBase.m + accBonus.m,
+    totalReputacao: armorBase.r + accBonus.r,
   };
 }

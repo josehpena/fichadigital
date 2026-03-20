@@ -29,10 +29,14 @@ export default function HomeScreen() {
       ]
     );
 
-  const { totalArmadura, totalResMagica } = computeDefenseTotals(
+  const { totalArmadura, totalResMagica, totalReputacao } = computeDefenseTotals(
     character.equipment,
     character.accessories
   );
+  const reputacaoBase =
+    character.attributes.reputacao.manha +
+    character.attributes.reputacao.carisma +
+    character.attributes.reputacao.etiqueta;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -71,6 +75,14 @@ export default function HomeScreen() {
           <Text style={styles.defenseIcon}>✨</Text>
           <Text style={styles.defenseLabel}>Res. Mágica</Text>
           <Text style={styles.defenseValue}>{totalResMagica}</Text>
+        </View>
+        <View style={styles.defenseBadge}>
+          <Text style={styles.defenseIcon}>🎭</Text>
+          <Text style={styles.defenseLabel}>Reputação</Text>
+          <Text style={styles.defenseValue}>{reputacaoBase + totalReputacao}</Text>
+          {totalReputacao > 0 && (
+            <Text style={styles.defenseBonus}>+{totalReputacao} equip.</Text>
+          )}
         </View>
       </View>
 
@@ -129,6 +141,7 @@ const styles = StyleSheet.create({
   defenseIcon:  { fontSize: 16, marginBottom: 2 },
   defenseLabel: { color: '#6c7086', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   defenseValue: { color: '#cdd6f4', fontSize: 22, fontWeight: 'bold' },
+  defenseBonus: { color: '#a6e3a1', fontSize: 10, marginTop: 1 },
 
   sectionBox: {
     backgroundColor: '#1e1e2e', borderRadius: 12, padding: 12,
