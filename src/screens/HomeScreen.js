@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TextInput, StyleSheet,
-  TouchableOpacity, Modal, Alert,
+  TouchableOpacity, Alert,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
 import StatusCard from '../components/StatusCard';
+import { computeDefenseTotals } from '../data/initialCharacter';
 
 const STATUS_KEYS = ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'];
 
 export default function HomeScreen() {
   const { character, dispatch } = useCharacter();
   const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState(character.name);
+  const [nameInput, setNameInput]     = useState(character.name);
 
   const saveName = () => {
     dispatch({ type: 'SET_NAME', value: nameInput.trim() || 'Personagem' });
@@ -28,9 +29,14 @@ export default function HomeScreen() {
       ]
     );
 
+  const { totalArmadura, totalResMagica } = computeDefenseTotals(
+    character.equipment,
+    character.accessories
+  );
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Character name */}
+      {/* Nome */}
       <View style={styles.nameRow}>
         {editingName ? (
           <TextInput
@@ -54,7 +60,21 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Racial traits */}
+      {/* Defesa (totais do equipamento) */}
+      <View style={styles.defenseRow}>
+        <View style={styles.defenseBadge}>
+          <Text style={styles.defenseIcon}>🛡️</Text>
+          <Text style={styles.defenseLabel}>Armadura</Text>
+          <Text style={styles.defenseValue}>{totalArmadura}</Text>
+        </View>
+        <View style={styles.defenseBadge}>
+          <Text style={styles.defenseIcon}>✨</Text>
+          <Text style={styles.defenseLabel}>Res. Mágica</Text>
+          <Text style={styles.defenseValue}>{totalResMagica}</Text>
+        </View>
+      </View>
+
+      {/* Características Raciais */}
       <View style={styles.sectionBox}>
         <Text style={styles.sectionTitle}>Características Raciais</Text>
         <TextInput
@@ -67,7 +87,7 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Status cards */}
+      {/* Status */}
       <Text style={styles.sectionTitle}>Status</Text>
       {STATUS_KEYS.map((key) => (
         <StatusCard key={key} statusKey={key} />
@@ -77,70 +97,46 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#11111b',
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
+  screen:  { flex: 1, backgroundColor: '#11111b' },
+  content: { padding: 16, paddingBottom: 40 },
+
   nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 12,
   },
-  nameText: {
-    color: '#cdd6f4',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  nameTap: {
-    color: '#6c7086',
-    fontSize: 11,
-    marginTop: 2,
-  },
+  nameText:  { color: '#cdd6f4', fontSize: 22, fontWeight: 'bold' },
+  nameTap:   { color: '#6c7086', fontSize: 11, marginTop: 2 },
   nameInput: {
-    color: '#cdd6f4',
-    fontSize: 22,
-    fontWeight: 'bold',
-    borderBottomWidth: 1,
-    borderBottomColor: '#89b4fa',
-    minWidth: 180,
-    paddingVertical: 2,
+    color: '#cdd6f4', fontSize: 22, fontWeight: 'bold',
+    borderBottomWidth: 1, borderBottomColor: '#89b4fa',
+    minWidth: 180, paddingVertical: 2,
   },
-  resetBtn: {
-    backgroundColor: '#45273a',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+  resetBtn:  { backgroundColor: '#45273a', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  resetText: { color: '#f38ba8', fontSize: 13, fontWeight: '600' },
+
+  defenseRow: {
+    flexDirection: 'row', gap: 10, marginBottom: 12,
   },
-  resetText: {
-    color: '#f38ba8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  sectionBox: {
+  defenseBadge: {
+    flex: 1,
     backgroundColor: '#1e1e2e',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#2e2e4e',
   },
+  defenseIcon:  { fontSize: 16, marginBottom: 2 },
+  defenseLabel: { color: '#6c7086', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  defenseValue: { color: '#cdd6f4', fontSize: 22, fontWeight: 'bold' },
+
+  sectionBox: {
+    backgroundColor: '#1e1e2e', borderRadius: 12, padding: 12,
+    marginBottom: 16, borderWidth: 1, borderColor: '#2e2e4e',
+  },
   sectionTitle: {
-    color: '#89b4fa',
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 10,
+    color: '#89b4fa', fontSize: 13, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10,
   },
-  racialInput: {
-    color: '#cdd6f4',
-    fontSize: 14,
-    minHeight: 60,
-    textAlignVertical: 'top',
-  },
+  racialInput: { color: '#cdd6f4', fontSize: 14, minHeight: 60, textAlignVertical: 'top' },
 });

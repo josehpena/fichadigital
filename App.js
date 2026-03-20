@@ -5,16 +5,18 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
 
 import { CharacterProvider } from './src/context/CharacterContext';
-import HomeScreen from './src/screens/HomeScreen';
+import HomeScreen       from './src/screens/HomeScreen';
 import AttributesScreen from './src/screens/AttributesScreen';
-import SkillsScreen from './src/screens/SkillsScreen';
+import SkillsScreen     from './src/screens/SkillsScreen';
+import EquipmentScreen  from './src/screens/EquipmentScreen';
 
 const Tab = createBottomTabNavigator();
 
 const TAB_ICONS = {
-  Status:    '❤️',
-  Atributos: '⚔️',
-  Perícias:  '📖',
+  Status:     '❤️',
+  Atributos:  '⚔️',
+  Perícias:   '📖',
+  Equipamento:'🛡️',
 };
 
 export default function App() {
@@ -33,11 +35,11 @@ export default function App() {
               backgroundColor: '#1e1e2e',
               borderTopColor: '#2e2e4e',
             },
-            tabBarActiveTintColor: '#89b4fa',
+            tabBarActiveTintColor:   '#89b4fa',
             tabBarInactiveTintColor: '#6c7086',
-            tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-            headerStyle: { backgroundColor: '#1e1e2e' },
-            headerTintColor: '#cdd6f4',
+            tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
+            headerStyle:      { backgroundColor: '#1e1e2e' },
+            headerTintColor:  '#cdd6f4',
             headerTitleStyle: { fontWeight: 'bold' },
           })}
         >
@@ -55,6 +57,11 @@ export default function App() {
             name="Perícias"
             component={SkillsScreen}
             options={{ title: 'Perícias' }}
+          />
+          <Tab.Screen
+            name="Equipamento"
+            component={EquipmentScreen}
+            options={{ title: 'Equipamento' }}
           />
         </Tab.Navigator>
       </NavigationContainer>
