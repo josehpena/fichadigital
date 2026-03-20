@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { INITIAL_CHARACTER } from '../data/initialCharacter';
+import {
+  INITIAL_CHARACTER,
+  COMPUTED_STATUS_KEYS,
+  computeMaxValues,
+} from '../data/initialCharacter';
 
-const STORAGE_KEY = '@fichadigital_character';
+const STORAGE_KEY = '@fichadigital_v2';
 
 const CharacterContext = createContext(null);
 
@@ -10,11 +14,37 @@ function clamp(value, min = 0, max = Infinity) {
   return Math.max(min, Math.min(max, value));
 }
 
+// Recalcula os tetos de status e clipa os valores atuais
+function applyComputedMaxes(status, attrs) {
+  const newMax = computeMaxValues(attrs);
+  const updated = { ...status };
+  COMPUTED_STATUS_KEYS.forEach((key) => {
+    const s = status[key];
+    const max = newMax[key];
+    updated[key] = { ...s, max, current: Math.min(s.current, max) };
+  });
+  return updated;
+}
+
 function reducer(state, action) {
   switch (action.type) {
 
-    case 'LOAD':
-      return action.payload;
+    case 'LOAD': {
+      const p = action.payload;
+      // Migração: se o esquema de atributos mudou (ex: sem 'manha'), reinicia
+      if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
+      const status = applyComputedMaxes(
+        p.status,
+        p.attributes
+      );
+      return {
+        ...INITIAL_CHARACTER,   // garante campos novos (equipment, accessories)
+        ...p,
+        status,
+        equipment:   p.equipment   ?? INITIAL_CHARACTER.equipment,
+        accessories: p.accessories ?? INITIAL_CHARACTER.accessories,
+      };
+    }
 
     case 'SET_NAME':
       return { ...state, name: action.value };
@@ -22,8 +52,12 @@ function reducer(state, action) {
     case 'SET_RACIAL_TRAITS':
       return { ...state, racialTraits: action.value };
 
-    // action: { statusKey, field: 'current'|'max', delta }
+    // { statusKey, field: 'current'|'max', delta }
     case 'CHANGE_STATUS': {
+      // Não deixa alterar o max dos status calculados
+      if (action.field === 'max' && COMPUTED_STATUS_KEYS.includes(action.statusKey)) {
+        return state;
+      }
       const s = state.status[action.statusKey];
       const updated = {
         ...s,
@@ -33,7 +67,6 @@ function reducer(state, action) {
           action.field === 'current' ? s.max : 999
         ),
       };
-      // Ensure current never exceeds max
       if (action.field === 'max' && updated.current > updated.max) {
         updated.current = updated.max;
       }
@@ -43,38 +76,61 @@ function reducer(state, action) {
       };
     }
 
-    // action: { statusKey, field, value }
-    case 'SET_STATUS': {
-      const s = state.status[action.statusKey];
-      const val = clamp(Number(action.value) || 0, 0, 999);
-      const updated = { ...s, [action.field]: val };
-      if (updated.current > updated.max) updated.current = updated.max;
-      return {
-        ...state,
-        status: { ...state.status, [action.statusKey]: updated },
-      };
-    }
-
-    // action: { group, subAttr, delta }
+    // { group, subAttr, delta }
     case 'CHANGE_ATTRIBUTE': {
       const group = state.attributes[action.group];
       const newVal = clamp((group[action.subAttr] || 0) + action.delta, 1, 10);
+      const newAttrs = {
+        ...state.attributes,
+        [action.group]: { ...group, [action.subAttr]: newVal },
+      };
+      const newStatus = applyComputedMaxes(state.status, newAttrs);
+      return { ...state, attributes: newAttrs, status: newStatus };
+    }
+
+    // { skill, delta }
+    case 'CHANGE_SKILL': {
+      const newVal = clamp((state.skills[action.skill] || 0) + action.delta, 0, 5);
+      return { ...state, skills: { ...state.skills, [action.skill]: newVal } };
+    }
+
+    // ── Equipamento ──────────────────────────────────────────────────────────
+
+    // { slot, field, value }  — field = 'armadura'|'resMagica'|'efeitos'|'nome'|'dano'|'durabilidadeMax'
+    case 'SET_EQUIP_FIELD': {
+      const slot = state.equipment[action.slot];
       return {
         ...state,
-        attributes: {
-          ...state.attributes,
-          [action.group]: { ...group, [action.subAttr]: newVal },
+        equipment: {
+          ...state.equipment,
+          [action.slot]: { ...slot, [action.field]: action.value },
         },
       };
     }
 
-    // action: { skill, delta }
-    case 'CHANGE_SKILL': {
-      const newVal = clamp((state.skills[action.skill] || 0) + action.delta, 0, 5);
+    // { slot, delta }  — altera durabilidade atual
+    case 'CHANGE_EQUIP_DURABILITY': {
+      const slot = state.equipment[action.slot];
+      const newDur = clamp(slot.durabilidade + action.delta, 0, slot.durabilidadeMax);
       return {
         ...state,
-        skills: { ...state.skills, [action.skill]: newVal },
+        equipment: {
+          ...state.equipment,
+          [action.slot]: { ...slot, durabilidade: newDur },
+        },
       };
+    }
+
+    // ── Acessórios ───────────────────────────────────────────────────────────
+
+    // { index, field, value }
+    case 'SET_ACCESSORY': {
+      const accessories = [...state.accessories];
+      accessories[action.index] = {
+        ...accessories[action.index],
+        [action.field]: action.value,
+      };
+      return { ...state, accessories };
     }
 
     case 'RESET':
@@ -88,18 +144,14 @@ function reducer(state, action) {
 export function CharacterProvider({ children }) {
   const [character, dispatch] = useReducer(reducer, INITIAL_CHARACTER);
 
-  // Load from storage on mount
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
       if (raw) {
-        try {
-          dispatch({ type: 'LOAD', payload: JSON.parse(raw) });
-        } catch (_) {}
+        try { dispatch({ type: 'LOAD', payload: JSON.parse(raw) }); } catch (_) {}
       }
     });
   }, []);
 
-  // Persist on every change
   useEffect(() => {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(character));
   }, [character]);
