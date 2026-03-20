@@ -35,7 +35,7 @@ function ArmorSlotCard({ slotKey }) {
         )}
       </View>
 
-      {/* Armadura e Res. Mágica */}
+      {/* Armadura, Res. Mágica e Reputação */}
       <View style={styles.statRow}>
         <NumField
           label="Armadura"
@@ -48,6 +48,12 @@ function ArmorSlotCard({ slotKey }) {
           value={equip.resMagica}
           dimmed={broken}
           onChange={(v) => setField('resMagica', v)}
+        />
+        <NumField
+          label="Reputação"
+          value={equip.reputacao || 0}
+          dimmed={broken}
+          onChange={(v) => setField('reputacao', v)}
         />
       </View>
 
@@ -143,7 +149,7 @@ function AccessoryCard({ index }) {
   const setField = (field, value) =>
     dispatch({ type: 'SET_ACCESSORY', index, field, value });
 
-  const hasData = acc.nome || acc.armadura || acc.resMagica || acc.efeitos;
+  const hasData = acc.nome || acc.armadura || acc.resMagica || acc.reputacao || acc.efeitos;
 
   return (
     <View style={styles.accCard}>
@@ -158,8 +164,9 @@ function AccessoryCard({ index }) {
         </Text>
         {hasData && (
           <View style={styles.accBadgeRow}>
-            {acc.armadura > 0   && <Text style={styles.accBadge}>🛡 {acc.armadura}</Text>}
-            {acc.resMagica > 0  && <Text style={styles.accBadge}>✨ {acc.resMagica}</Text>}
+            {acc.armadura > 0        && <Text style={styles.accBadge}>🛡 {acc.armadura}</Text>}
+            {acc.resMagica > 0       && <Text style={styles.accBadge}>✨ {acc.resMagica}</Text>}
+            {(acc.reputacao || 0) > 0 && <Text style={styles.accBadge}>🎭 {acc.reputacao}</Text>}
           </View>
         )}
         <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
@@ -175,8 +182,9 @@ function AccessoryCard({ index }) {
             placeholderTextColor="#45475a"
           />
           <View style={styles.statRow}>
-            <NumField label="Armadura"    value={acc.armadura}  onChange={(v) => setField('armadura', v)} />
-            <NumField label="Res. Mágica" value={acc.resMagica} onChange={(v) => setField('resMagica', v)} />
+            <NumField label="Armadura"    value={acc.armadura}          onChange={(v) => setField('armadura', v)} />
+            <NumField label="Res. Mágica" value={acc.resMagica}         onChange={(v) => setField('resMagica', v)} />
+            <NumField label="Reputação"   value={acc.reputacao || 0}    onChange={(v) => setField('reputacao', v)} />
           </View>
           <TextInput
             style={styles.efectosInput}
