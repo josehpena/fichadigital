@@ -4,9 +4,9 @@ import { useCharacter } from '../context/CharacterContext';
 import { ATTRIBUTE_LABELS } from '../data/initialCharacter';
 
 const GROUPS = [
-  { key: 'robustez',    subAttrs: ['forca', 'destreza', 'vigor'],           color: '#f38ba8' },
-  { key: 'reputacao',   subAttrs: ['manha', 'carisma', 'etiqueta'],         color: '#fab387' },
-  { key: 'concentracao',subAttrs: ['percepcao', 'raciocinio', 'inteligencia'], color: '#89dceb' },
+  { group: 'robustez',    subAttrs: ['forca', 'destreza', 'vigor'],              color: '#f38ba8' },
+  { group: 'reputacao',   subAttrs: ['manha', 'carisma', 'etiqueta'],            color: '#fab387' },
+  { group: 'concentracao',subAttrs: ['percepcao', 'raciocinio', 'inteligencia'], color: '#89dceb' },
 ];
 
 function SubAttrRow({ group, subAttr }) {
@@ -64,7 +64,7 @@ export default function AttributesScreen() {
       <Text style={styles.pageTitle}>Atributos</Text>
       <Text style={styles.hint}>Toque nos pontos para definir o valor (1–10)</Text>
       {GROUPS.map((g) => (
-        <AttributeGroup key={g.key} {...g} />
+        <AttributeGroup key={g.group} {...g} />
       ))}
     </ScrollView>
   );
