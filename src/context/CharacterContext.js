@@ -7,7 +7,7 @@ import {
   SKILL_CATEGORIES,
   xpCostForRange,
 } from '../data/initialCharacter';
-import { findTrail } from '../data/trailsData';
+import { findTrail, findCategoryTrails } from '../data/trailsData';
 
 // Descobre a categoria de uma perícia
 function getSkillCategory(skill) {
@@ -227,7 +227,14 @@ function reducer(state, action) {
       let trailData = state.skillTree.acquiredTrails[action.trailId];
       let newSkillTree = state.skillTree;
       if (!trailData) {
-        const nextCost = 40 + state.skillTree.trailCount * 20;
+        // Se pertence a uma categoria, reutiliza o custo de outra trilha já adquirida
+        let nextCost = 40 + state.skillTree.trailCount * 20;
+        if (trail.categoria) {
+          const catTrails = findCategoryTrails(trail.categoria);
+          const existing = catTrails.find(ct => state.skillTree.acquiredTrails[ct.id]);
+          if (existing) nextCost = state.skillTree.acquiredTrails[existing.id].cost;
+        }
+
         trailData = { cost: nextCost, skills: {} };
         newSkillTree = {
           trailCount: state.skillTree.trailCount + 1,
@@ -236,6 +243,22 @@ function reducer(state, action) {
             [action.trailId]: trailData,
           },
         };
+
+        // Adquire todas as outras trilhas da mesma categoria no mesmo custo
+        if (trail.categoria) {
+          const catTrails = findCategoryTrails(trail.categoria);
+          for (const catTrail of catTrails) {
+            if (catTrail.id !== action.trailId && !newSkillTree.acquiredTrails[catTrail.id]) {
+              newSkillTree = {
+                trailCount: newSkillTree.trailCount + 1,
+                acquiredTrails: {
+                  ...newSkillTree.acquiredTrails,
+                  [catTrail.id]: { cost: nextCost, skills: {} },
+                },
+              };
+            }
+          }
+        }
       }
 
       const curLevel = trailData.skills[action.skillId] ?? 0;
