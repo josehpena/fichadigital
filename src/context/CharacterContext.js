@@ -4,7 +4,17 @@ import {
   INITIAL_CHARACTER,
   COMPUTED_STATUS_KEYS,
   computeMaxValues,
+  SKILL_CATEGORIES,
+  xpCostForRange,
 } from '../data/initialCharacter';
+
+// Descobre a categoria de uma perícia
+function getSkillCategory(skill) {
+  for (const [cat, skills] of Object.entries(SKILL_CATEGORIES)) {
+    if (skills.includes(skill)) return cat;
+  }
+  return null;
+}
 
 const STORAGE_KEY = '@fichadigital_v2';
 
@@ -83,19 +93,39 @@ function reducer(state, action) {
 
     // { group, subAttr, delta }
     case 'CHANGE_ATTRIBUTE': {
-      const group = state.attributes[action.group];
-      const newVal = clamp((group[action.subAttr] || 0) + action.delta, 1, 10);
+      const group    = state.attributes[action.group];
+      const curVal   = group[action.subAttr] || 0;
+      const newVal   = clamp(curVal + action.delta, 1, 10);
       const newAttrs = {
         ...state.attributes,
         [action.group]: { ...group, [action.subAttr]: newVal },
       };
       const newStatus = applyComputedMaxes(state.status, newAttrs);
+
+      if (newVal > curVal) {
+        const xpCost  = state.settings.xpCosts[action.group] ?? 10;
+        const cost    = xpCostForRange(curVal, newVal, xpCost);
+        if (state.status.xp.current < cost) return state; // XP insuficiente
+        newStatus.xp  = { ...newStatus.xp, current: newStatus.xp.current - cost };
+      }
+
       return { ...state, attributes: newAttrs, status: newStatus };
     }
 
     // { skill, delta }
     case 'CHANGE_SKILL': {
-      const newVal = clamp((state.skills[action.skill] || 0) + action.delta, 0, 5);
+      const curVal = state.skills[action.skill] || 0;
+      const newVal = clamp(curVal + action.delta, 0, 5);
+
+      if (newVal > curVal) {
+        const cat    = getSkillCategory(action.skill);
+        const xpCost = state.settings.xpCosts[cat] ?? 5;
+        const cost   = xpCostForRange(curVal, newVal, xpCost);
+        if (state.status.xp.current < cost) return state; // XP insuficiente
+        const newXp  = { ...state.status.xp, current: state.status.xp.current - cost };
+        return { ...state, skills: { ...state.skills, [action.skill]: newVal }, status: { ...state.status, xp: newXp } };
+      }
+
       return { ...state, skills: { ...state.skills, [action.skill]: newVal } };
     }
 
