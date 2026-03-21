@@ -31,18 +31,23 @@ function reducer(state, action) {
 
     case 'LOAD': {
       const p = action.payload;
-      // Migração: se o esquema de atributos mudou (ex: sem 'manha'), reinicia
       if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
-      const status = applyComputedMaxes(
-        p.status,
-        p.attributes
-      );
+      const status = applyComputedMaxes(p.status, p.attributes);
+      // Mescla settings: preserva customizações salvas, garante campos novos
+      const savedSettings = p.settings ?? {};
+      const settings = {
+        ...INITIAL_CHARACTER.settings,
+        ...savedSettings,
+        xpCosts: { ...INITIAL_CHARACTER.settings.xpCosts, ...(savedSettings.xpCosts ?? {}) },
+        statusOrder: savedSettings.statusOrder ?? INITIAL_CHARACTER.settings.statusOrder,
+      };
       return {
-        ...INITIAL_CHARACTER,   // garante campos novos (equipment, accessories)
+        ...INITIAL_CHARACTER,
         ...p,
         status,
         equipment:   p.equipment   ?? INITIAL_CHARACTER.equipment,
         accessories: p.accessories ?? INITIAL_CHARACTER.accessories,
+        settings,
       };
     }
 
@@ -131,6 +136,31 @@ function reducer(state, action) {
         [action.field]: action.value,
       };
       return { ...state, accessories };
+    }
+
+    // { key: 'vida'|'energia'|..., direction: 'up'|'down' }
+    case 'MOVE_STATUS': {
+      const order = [...state.settings.statusOrder];
+      const idx = order.indexOf(action.key);
+      if (action.direction === 'up' && idx > 0) {
+        [order[idx], order[idx - 1]] = [order[idx - 1], order[idx]];
+      } else if (action.direction === 'down' && idx < order.length - 1) {
+        [order[idx], order[idx + 1]] = [order[idx + 1], order[idx]];
+      }
+      return { ...state, settings: { ...state.settings, statusOrder: order } };
+    }
+
+    // { key: 'robustez'|'Físicos'|..., delta: +5|-5 }
+    case 'CHANGE_XP_COST': {
+      const cur = state.settings.xpCosts[action.key] ?? 5;
+      const next = Math.max(5, cur + action.delta);
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          xpCosts: { ...state.settings.xpCosts, [action.key]: next },
+        },
+      };
     }
 
     case 'RESET':
