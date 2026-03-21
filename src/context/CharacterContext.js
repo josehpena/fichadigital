@@ -218,12 +218,26 @@ function reducer(state, action) {
 
     // { trailId, skillId, targetLevel }
     case 'LEARN_SKILL': {
-      const trailData = state.skillTree.acquiredTrails[action.trailId];
-      if (!trailData) return state;
       const trail = findTrail(action.trailId);
       if (!trail) return state;
       const skill = trail.skills.find(s => s.id === action.skillId);
       if (!skill) return state;
+
+      // Auto-adquire a trilha na primeira compra de habilidade
+      let trailData = state.skillTree.acquiredTrails[action.trailId];
+      let newSkillTree = state.skillTree;
+      if (!trailData) {
+        const nextCost = 40 + state.skillTree.trailCount * 20;
+        trailData = { cost: nextCost, skills: {} };
+        newSkillTree = {
+          trailCount: state.skillTree.trailCount + 1,
+          acquiredTrails: {
+            ...state.skillTree.acquiredTrails,
+            [action.trailId]: trailData,
+          },
+        };
+      }
+
       const curLevel = trailData.skills[action.skillId] ?? 0;
       if (action.targetLevel <= curLevel || action.targetLevel > skill.maxLevel) return state;
       const cost = xpCostForRange(curLevel, action.targetLevel, trailData.cost);
@@ -233,9 +247,9 @@ function reducer(state, action) {
         ...state,
         status: { ...state.status, xp: newXp },
         skillTree: {
-          ...state.skillTree,
+          ...newSkillTree,
           acquiredTrails: {
-            ...state.skillTree.acquiredTrails,
+            ...newSkillTree.acquiredTrails,
             [action.trailId]: {
               ...trailData,
               skills: { ...trailData.skills, [action.skillId]: action.targetLevel },

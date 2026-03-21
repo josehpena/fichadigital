@@ -24,7 +24,6 @@ function SkillRow({ trailId, trailCost, skill, onLongPress }) {
 
   const handleDot = (targetLevel) => {
     if (targetLevel === curLevel) {
-      // Tapping current level = downgrade
       dispatch({ type: 'UNLEARN_SKILL', trailId, skillId: skill.id });
     } else if (targetLevel > curLevel) {
       dispatch({ type: 'LEARN_SKILL', trailId, skillId: skill.id, targetLevel });
@@ -42,29 +41,24 @@ function SkillRow({ trailId, trailCost, skill, onLongPress }) {
         {Array.from({ length: skill.maxLevel }).map((_, i) => {
           const target = i + 1;
           const isActive = i < curLevel;
-          const cost = target > curLevel
-            ? (target - curLevel) * target * trailCost  // simplified: cost per step
-            : 0;
-          // xpCostForRange(curLevel, target, trailCost)
           const locked = target > curLevel && xpCostForRange(curLevel, target, trailCost) > currentXp;
 
           return (
             <TouchableOpacity
               key={i}
-              disabled={!trailData || locked}
+              disabled={locked}
               onPress={() => handleDot(target)}
             >
               <View style={[
                 styles.dot,
-                isActive  ? styles.dotFilled  :
-                !trailData ? styles.dotDisabled :
-                locked    ? styles.dotLocked   : styles.dotEmpty,
+                isActive ? styles.dotFilled :
+                locked   ? styles.dotLocked : styles.dotEmpty,
               ]} />
             </TouchableOpacity>
           );
         })}
       </View>
-      {trailData && curLevel < skill.maxLevel && (
+      {curLevel < skill.maxLevel && (
         <Text style={[
           styles.xpHint,
           xpCostForRange(curLevel, curLevel + 1, trailCost) > currentXp && styles.xpHintInsuf,
@@ -88,13 +82,11 @@ function xpCostForRange(fromLevel, toLevel, costPerLevel) {
 // ── Trail Card ───────────────────────────────────────────────────────────────
 
 function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
-  const { character, dispatch } = useCharacter();
+  const { character } = useCharacter();
   const [expanded, setExpanded] = useState(false);
-  const trailData  = character.skillTree.acquiredTrails[trail.id];
-  const acquired   = !!trailData;
-  const trailCost  = trailData?.cost ?? nextTrailCost;
-  const currentXp  = character.status.xp.current;
-  const canAcquire = !acquired && currentXp >= nextTrailCost;
+  const trailData   = character.skillTree.acquiredTrails[trail.id];
+  const acquired    = !!trailData;
+  const trailCost   = trailData?.cost ?? nextTrailCost;
   const totalLevels = trailData
     ? Object.values(trailData.skills).reduce((s, v) => s + v, 0)
     : 0;
@@ -103,8 +95,8 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
     <View style={[styles.trailCard, acquired && { borderLeftColor: color }]}>
       <TouchableOpacity
         style={styles.trailHeader}
-        onPress={() => acquired && setExpanded(v => !v)}
-        activeOpacity={acquired ? 0.7 : 1}
+        onPress={() => setExpanded(v => !v)}
+        activeOpacity={0.7}
       >
         <View style={[styles.trailDot, { backgroundColor: acquired ? color : '#45475a' }]} />
         <View style={{ flex: 1 }}>
@@ -113,28 +105,18 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
             <Text style={styles.trailCategory}>{trail.categoria}</Text>
           )}
         </View>
-        {acquired ? (
-          <View style={styles.trailBadge}>
-            <Text style={[styles.trailBadgeText, { color }]}>{trailCost} XP/nível</Text>
-            {totalLevels > 0 && (
-              <Text style={styles.trailLevels}>{totalLevels} pts</Text>
-            )}
-            <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.acquireBtn, !canAcquire && styles.acquireBtnDisabled]}
-            disabled={!canAcquire}
-            onPress={() => dispatch({ type: 'ACQUIRE_TRAIL', trailId: trail.id })}
-          >
-            <Text style={[styles.acquireBtnText, !canAcquire && styles.acquireBtnTextDisabled]}>
-              {nextTrailCost} XP
-            </Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.trailBadge}>
+          <Text style={[styles.trailBadgeText, { color: acquired ? color : '#45475a' }]}>
+            {trailCost} XP/nível
+          </Text>
+          {acquired && totalLevels > 0 && (
+            <Text style={styles.trailLevels}>{totalLevels} pts</Text>
+          )}
+          <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
+        </View>
       </TouchableOpacity>
 
-      {acquired && expanded && (
+      {expanded && (
         <View style={styles.skillList}>
           {trail.skills.map(s => (
             <SkillRow
@@ -277,7 +259,7 @@ export default function SkillTreeScreen() {
       {/* Trail list */}
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         <Text style={styles.hint}>
-          Toque em uma trilha para expandir · Segure uma habilidade para ver detalhes
+          Toque para expandir · Compre uma habilidade para desbloquear a trilha · Segure para detalhes
         </Text>
         {tab.trails.map(trail => (
           <TrailCard
@@ -342,15 +324,6 @@ const styles = StyleSheet.create({
   trailBadgeText: { fontSize: 11, fontStyle: 'italic' },
   trailLevels: { color: '#6c7086', fontSize: 12 },
   chevron: { color: '#6c7086', fontSize: 11 },
-  acquireBtn: {
-    backgroundColor: '#313244', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: '#89b4fa',
-  },
-  acquireBtnDisabled: { borderColor: '#3d2233', backgroundColor: '#1e1e2e' },
-  acquireBtnText:         { color: '#89b4fa', fontSize: 12, fontWeight: '600' },
-  acquireBtnTextDisabled: { color: '#45475a' },
-
   skillList: { paddingHorizontal: 12, paddingBottom: 8 },
   skillRow: {
     flexDirection: 'row', alignItems: 'center',
