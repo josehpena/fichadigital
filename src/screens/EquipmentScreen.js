@@ -12,12 +12,16 @@ import { TRAILS_ARMAS } from '../data/trailsData';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Retorna todas as categorias únicas de armas
-function getAllWeaponCategories() {
-  const cats = new Set();
-  for (const trail of TRAILS_ARMAS) cats.add(trail.categoria);
-  return [...cats];
+// Agrupa trilhas de arma por categoria para exibição no picker
+function getWeaponsByCat() {
+  const map = {};
+  for (const trail of TRAILS_ARMAS) {
+    if (!map[trail.categoria]) map[trail.categoria] = [];
+    map[trail.categoria].push(trail);
+  }
+  return map;
 }
+const WEAPONS_BY_CAT = getWeaponsByCat();
 
 const ATTR_SUB_KEYS = ['forca', 'destreza', 'vigor', 'manha', 'carisma', 'etiqueta', 'percepcao', 'raciocinio', 'inteligencia'];
 const SKILL_KEYS    = Object.keys(SKILL_LABELS);
@@ -142,16 +146,14 @@ function TirasModal({ visible, slotKey, tiras, onClose }) {
 function WeaponModal({ visible, slotKey, onClose }) {
   const { character, dispatch } = useCharacter();
   const equip = character.equipment[slotKey];
-  const availCats = getAllWeaponCategories();
   const [showTiras, setShowTiras] = useState(false);
 
   const setField = (field, value) =>
     dispatch({ type: 'SET_EQUIP_FIELD', slot: slotKey, field, value });
 
-  // Seleciona categoria → atribui tipo
-  function selectCat(cat) {
-    setField('tipo', cat);
-    setField('nome', cat);
+  function selectTrail(trail) {
+    setField('tipo', trail.id);
+    if (!equip.nome) setField('nome', trail.nome);
   }
 
   if (showTiras) {
@@ -168,25 +170,32 @@ function WeaponModal({ visible, slotKey, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={ms.overlay}>
-        <View style={ms.sheet}>
+        <ScrollView style={ms.sheet} contentContainerStyle={{ paddingBottom: 24 }}>
           <View style={ms.sheetHeader}>
             <Text style={ms.sheetTitle}>{EQUIP_LABELS[slotKey]}</Text>
             <TouchableOpacity onPress={onClose}><Text style={ms.closeBtn}>✕</Text></TouchableOpacity>
           </View>
 
-          {/* Tipo de arma */}
+          {/* Tipo de arma — agrupado por categoria */}
           <Text style={ms.sectionLabel}>Tipo de Arma</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={ms.catPicker}>
-            {availCats.map(cat => (
-              <TouchableOpacity
-                key={cat}
-                style={[ms.catChip, equip.tipo === cat && ms.catChipActive]}
-                onPress={() => selectCat(cat)}
-              >
-                <Text style={[ms.catChipText, equip.tipo === cat && ms.catChipTextActive]}>{cat}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {Object.entries(WEAPONS_BY_CAT).map(([cat, trails]) => (
+            <View key={cat} style={ms.catGroup}>
+              <Text style={ms.catGroupLabel}>{cat}</Text>
+              <View style={ms.catGroupRow}>
+                {trails.map(trail => (
+                  <TouchableOpacity
+                    key={trail.id}
+                    style={[ms.catChip, equip.tipo === trail.id && ms.catChipActive]}
+                    onPress={() => selectTrail(trail)}
+                  >
+                    <Text style={[ms.catChipText, equip.tipo === trail.id && ms.catChipTextActive]}>
+                      {trail.nome}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          ))}
 
           {/* Nome personalizado */}
           <Text style={ms.sectionLabel}>Nome</Text>
@@ -247,7 +256,7 @@ function WeaponModal({ visible, slotKey, onClose }) {
               ))}
             </View>
           )}
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -687,6 +696,10 @@ const ms = StyleSheet.create({
     backgroundColor: '#313244', alignItems: 'center', justifyContent: 'center',
   },
   numBtnTxt: { color: '#cdd6f4', fontSize: 18, lineHeight: 22 },
+
+  catGroup:      { marginBottom: 8 },
+  catGroupLabel: { color: '#45475a', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
+  catGroupRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 
   catPicker: { flexDirection: 'row', marginBottom: 2 },
   catChip:   {
