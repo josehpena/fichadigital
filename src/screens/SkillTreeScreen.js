@@ -1,0 +1,399 @@
+import React, { useState } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, Modal, Pressable,
+} from 'react-native';
+import { useCharacter } from '../context/CharacterContext';
+import { TRAILS_PROFISSOES, TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
+
+const CATEGORY_TABS = [
+  { key: 'profissoes', label: 'Profissões', color: '#fab387', trails: TRAILS_PROFISSOES },
+  { key: 'armas',      label: 'Armas',      color: '#f38ba8', trails: TRAILS_ARMAS      },
+  { key: 'magias',     label: 'Magias',     color: '#cba6f7', trails: TRAILS_MAGIAS     },
+];
+
+const MAX_LEVEL = 3;
+
+// ── Skill Row ────────────────────────────────────────────────────────────────
+
+function SkillRow({ trailId, trailCost, skill, onLongPress }) {
+  const { character, dispatch } = useCharacter();
+  const trailData = character.skillTree.acquiredTrails[trailId];
+  const curLevel  = trailData?.skills[skill.id] ?? 0;
+  const currentXp = character.status.xp.current;
+
+  const handleDot = (targetLevel) => {
+    if (targetLevel === curLevel) {
+      // Tapping current level = downgrade
+      dispatch({ type: 'UNLEARN_SKILL', trailId, skillId: skill.id });
+    } else if (targetLevel > curLevel) {
+      dispatch({ type: 'LEARN_SKILL', trailId, skillId: skill.id, targetLevel });
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.skillRow}
+      onLongPress={() => onLongPress && onLongPress(skill, curLevel, trailCost)}
+      activeOpacity={0.8}
+    >
+      <Text style={styles.skillName}>{skill.nome}</Text>
+      <View style={styles.dotsRow}>
+        {Array.from({ length: skill.maxLevel }).map((_, i) => {
+          const target = i + 1;
+          const isActive = i < curLevel;
+          const cost = target > curLevel
+            ? (target - curLevel) * target * trailCost  // simplified: cost per step
+            : 0;
+          // xpCostForRange(curLevel, target, trailCost)
+          const locked = target > curLevel && xpCostForRange(curLevel, target, trailCost) > currentXp;
+
+          return (
+            <TouchableOpacity
+              key={i}
+              disabled={!trailData || locked}
+              onPress={() => handleDot(target)}
+            >
+              <View style={[
+                styles.dot,
+                isActive  ? styles.dotFilled  :
+                !trailData ? styles.dotDisabled :
+                locked    ? styles.dotLocked   : styles.dotEmpty,
+              ]} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {trailData && curLevel < skill.maxLevel && (
+        <Text style={[
+          styles.xpHint,
+          xpCostForRange(curLevel, curLevel + 1, trailCost) > currentXp && styles.xpHintInsuf,
+        ]}>
+          {xpCostForRange(curLevel, curLevel + 1, trailCost)} XP
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// Imported helper (duplicated here to avoid circular import issues)
+function xpCostForRange(fromLevel, toLevel, costPerLevel) {
+  let total = 0;
+  for (let lvl = fromLevel + 1; lvl <= toLevel; lvl++) {
+    total += lvl * costPerLevel;
+  }
+  return total;
+}
+
+// ── Trail Card ───────────────────────────────────────────────────────────────
+
+function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
+  const { character, dispatch } = useCharacter();
+  const [expanded, setExpanded] = useState(false);
+  const trailData  = character.skillTree.acquiredTrails[trail.id];
+  const acquired   = !!trailData;
+  const trailCost  = trailData?.cost ?? nextTrailCost;
+  const currentXp  = character.status.xp.current;
+  const canAcquire = !acquired && currentXp >= nextTrailCost;
+  const totalLevels = trailData
+    ? Object.values(trailData.skills).reduce((s, v) => s + v, 0)
+    : 0;
+
+  return (
+    <View style={[styles.trailCard, acquired && { borderLeftColor: color }]}>
+      <TouchableOpacity
+        style={styles.trailHeader}
+        onPress={() => acquired && setExpanded(v => !v)}
+        activeOpacity={acquired ? 0.7 : 1}
+      >
+        <View style={[styles.trailDot, { backgroundColor: acquired ? color : '#45475a' }]} />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.trailName, acquired && { color }]}>{trail.nome}</Text>
+          {trail.categoria && (
+            <Text style={styles.trailCategory}>{trail.categoria}</Text>
+          )}
+        </View>
+        {acquired ? (
+          <View style={styles.trailBadge}>
+            <Text style={[styles.trailBadgeText, { color }]}>{trailCost} XP/nível</Text>
+            {totalLevels > 0 && (
+              <Text style={styles.trailLevels}>{totalLevels} pts</Text>
+            )}
+            <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.acquireBtn, !canAcquire && styles.acquireBtnDisabled]}
+            disabled={!canAcquire}
+            onPress={() => dispatch({ type: 'ACQUIRE_TRAIL', trailId: trail.id })}
+          >
+            <Text style={[styles.acquireBtnText, !canAcquire && styles.acquireBtnTextDisabled]}>
+              {nextTrailCost} XP
+            </Text>
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+
+      {acquired && expanded && (
+        <View style={styles.skillList}>
+          {trail.skills.map(s => (
+            <SkillRow
+              key={s.id}
+              trailId={trail.id}
+              trailCost={trailCost}
+              skill={s}
+              onLongPress={(skill, curLevel, cost) =>
+                onSelectSkillDetail({ skill, curLevel, trailCost: cost, trailId: trail.id })
+              }
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Skill Detail Modal ───────────────────────────────────────────────────────
+
+function SkillDetailModal({ detail, onClose }) {
+  if (!detail) return null;
+  const { skill, curLevel, trailCost } = detail;
+
+  const renderNivelContent = (nivelData) => {
+    if (Array.isArray(nivelData)) {
+      return nivelData.map((line, i) => (
+        <Text key={i} style={styles.nivelLine}>{line}</Text>
+      ));
+    }
+    if (typeof nivelData === 'object' && nivelData !== null) {
+      return (
+        <View>
+          {nivelData.custo !== undefined && nivelData.custo !== null && (
+            <Text style={styles.nivelLine}>Custo: {nivelData.custo} mana</Text>
+          )}
+          {nivelData.alcance !== undefined && nivelData.alcance !== null && (
+            <Text style={styles.nivelLine}>Alcance: {nivelData.alcance}m</Text>
+          )}
+          {nivelData.raio !== undefined && nivelData.raio !== null && (
+            <Text style={styles.nivelLine}>Raio: {nivelData.raio}m</Text>
+          )}
+          {nivelData.efeito ? (
+            <Text style={styles.nivelLine}>{nivelData.efeito}</Text>
+          ) : null}
+        </View>
+      );
+    }
+    return <Text style={styles.nivelLine}>{String(nivelData)}</Text>;
+  };
+
+  return (
+    <Modal transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={styles.modalSheet} onPress={() => {}}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>{skill.nome}</Text>
+          {skill.descricao ? (
+            <Text style={styles.modalDesc}>{skill.descricao}</Text>
+          ) : null}
+          <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+            {Object.entries(skill.niveis).sort(([a],[b]) => +a - +b).map(([lvl, data]) => (
+              <View key={lvl} style={[
+                styles.nivelBlock,
+                parseInt(lvl) <= curLevel && styles.nivelBlockLearned,
+              ]}>
+                <Text style={[
+                  styles.nivelLabel,
+                  parseInt(lvl) <= curLevel && styles.nivelLabelLearned,
+                ]}>
+                  Nível {lvl}
+                  {parseInt(lvl) > curLevel && trailCost > 0 && (
+                    <Text style={styles.nivelCost}>
+                      {' '}· {xpCostForRange(parseInt(lvl)-1, parseInt(lvl), trailCost)} XP
+                    </Text>
+                  )}
+                </Text>
+                {renderNivelContent(data)}
+              </View>
+            ))}
+          </ScrollView>
+          <TouchableOpacity style={styles.modalClose} onPress={onClose}>
+            <Text style={styles.modalCloseText}>Fechar</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ── Main Screen ──────────────────────────────────────────────────────────────
+
+export default function SkillTreeScreen() {
+  const { character } = useCharacter();
+  const [activeTab, setActiveTab] = useState('profissoes');
+  const [skillDetail, setSkillDetail] = useState(null);
+
+  const nextTrailCost = 40 + character.skillTree.trailCount * 20;
+  const tab = CATEGORY_TABS.find(t => t.key === activeTab);
+
+  const totalAcquired = Object.keys(character.skillTree.acquiredTrails).length;
+
+  return (
+    <View style={styles.screen}>
+      {/* Header info */}
+      <View style={styles.headerRow}>
+        <Text style={styles.pageTitle}>Habilidades</Text>
+        <View style={styles.headerBadges}>
+          <View style={styles.badge}>
+            <Text style={styles.badgeLabel}>Trilhas</Text>
+            <Text style={styles.badgeValue}>{totalAcquired}</Text>
+          </View>
+          <View style={styles.badge}>
+            <Text style={styles.badgeLabel}>Próxima</Text>
+            <Text style={[
+              styles.badgeValue,
+              nextTrailCost > character.status.xp.current && { color: '#f38ba8' },
+            ]}>
+              {nextTrailCost} XP
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Category tabs */}
+      <View style={styles.tabRow}>
+        {CATEGORY_TABS.map(t => (
+          <TouchableOpacity
+            key={t.key}
+            style={[styles.tab, activeTab === t.key && { borderBottomColor: t.color, borderBottomWidth: 2 }]}
+            onPress={() => setActiveTab(t.key)}
+          >
+            <Text style={[styles.tabLabel, activeTab === t.key && { color: t.color }]}>
+              {t.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Trail list */}
+      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+        <Text style={styles.hint}>
+          Toque em uma trilha para expandir · Segure uma habilidade para ver detalhes
+        </Text>
+        {tab.trails.map(trail => (
+          <TrailCard
+            key={trail.id}
+            trail={trail}
+            nextTrailCost={nextTrailCost}
+            color={tab.color}
+            onSelectSkillDetail={setSkillDetail}
+          />
+        ))}
+      </ScrollView>
+
+      <SkillDetailModal detail={skillDetail} onClose={() => setSkillDetail(null)} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#11111b' },
+
+  headerRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8,
+  },
+  pageTitle: { color: '#cdd6f4', fontSize: 22, fontWeight: 'bold' },
+  headerBadges: { flexDirection: 'row', gap: 8 },
+  badge: {
+    backgroundColor: '#1e1e2e', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 4, alignItems: 'center',
+  },
+  badgeLabel: { color: '#6c7086', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
+  badgeValue: { color: '#89b4fa', fontSize: 14, fontWeight: 'bold' },
+
+  tabRow: {
+    flexDirection: 'row', backgroundColor: '#1e1e2e',
+    borderBottomWidth: 1, borderBottomColor: '#2e2e4e',
+  },
+  tab: {
+    flex: 1, paddingVertical: 10, alignItems: 'center',
+    borderBottomWidth: 2, borderBottomColor: 'transparent',
+  },
+  tabLabel: { color: '#6c7086', fontSize: 13, fontWeight: '600' },
+
+  list:        { flex: 1 },
+  listContent: { padding: 12, paddingBottom: 40 },
+  hint: { color: '#45475a', fontSize: 11, marginBottom: 10, textAlign: 'center' },
+
+  trailCard: {
+    backgroundColor: '#1e1e2e', borderRadius: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: '#2e2e4e', borderLeftWidth: 3, borderLeftColor: '#2e2e4e',
+    overflow: 'hidden',
+  },
+  trailHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 12, gap: 10,
+  },
+  trailDot: { width: 10, height: 10, borderRadius: 5 },
+  trailName: { color: '#cdd6f4', fontSize: 14, fontWeight: '700' },
+  trailCategory: { color: '#6c7086', fontSize: 11 },
+  trailBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  trailBadgeText: { fontSize: 11, fontStyle: 'italic' },
+  trailLevels: { color: '#6c7086', fontSize: 12 },
+  chevron: { color: '#6c7086', fontSize: 11 },
+  acquireBtn: {
+    backgroundColor: '#313244', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: '#89b4fa',
+  },
+  acquireBtnDisabled: { borderColor: '#3d2233', backgroundColor: '#1e1e2e' },
+  acquireBtnText:         { color: '#89b4fa', fontSize: 12, fontWeight: '600' },
+  acquireBtnTextDisabled: { color: '#45475a' },
+
+  skillList: { paddingHorizontal: 12, paddingBottom: 8 },
+  skillRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#2e2e4e',
+    gap: 8,
+  },
+  skillName: { color: '#cdd6f4', fontSize: 12, flex: 1 },
+  dotsRow:   { flexDirection: 'row', gap: 6 },
+  dot:       { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
+  dotFilled:   { backgroundColor: '#89b4fa', borderColor: '#89b4fa' },
+  dotEmpty:    { backgroundColor: 'transparent', borderColor: '#45475a' },
+  dotLocked:   { backgroundColor: 'transparent', borderColor: '#3d2233', borderStyle: 'dashed' },
+  dotDisabled: { backgroundColor: 'transparent', borderColor: '#313244' },
+  xpHint:      { color: '#45475a', fontSize: 10, minWidth: 36, textAlign: 'right' },
+  xpHintInsuf: { color: '#f38ba8' },
+
+  // Modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#1e1e2e', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingBottom: 32, maxHeight: '80%',
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#45475a', alignSelf: 'center', marginBottom: 16,
+  },
+  modalTitle: { color: '#cdd6f4', fontSize: 18, fontWeight: 'bold', marginBottom: 6 },
+  modalDesc:  { color: '#6c7086', fontSize: 12, marginBottom: 14, lineHeight: 18 },
+  modalScroll: { flexGrow: 0 },
+  nivelBlock: {
+    backgroundColor: '#313244', borderRadius: 8, padding: 10, marginBottom: 8,
+  },
+  nivelBlockLearned: { backgroundColor: '#1d3052', borderWidth: 1, borderColor: '#89b4fa33' },
+  nivelLabel:        { color: '#6c7086', fontSize: 12, fontWeight: '700', marginBottom: 4 },
+  nivelLabelLearned: { color: '#89b4fa' },
+  nivelCost:         { color: '#94e2d5', fontWeight: '400' },
+  nivelLine:         { color: '#cdd6f4', fontSize: 12, lineHeight: 18 },
+  modalClose: {
+    marginTop: 12, backgroundColor: '#313244', borderRadius: 10,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  modalCloseText: { color: '#cdd6f4', fontWeight: '600' },
+});

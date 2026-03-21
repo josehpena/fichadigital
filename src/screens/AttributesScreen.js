@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
-import { ATTRIBUTE_LABELS } from '../data/initialCharacter';
+import { ATTRIBUTE_LABELS, xpCostForRange } from '../data/initialCharacter';
 
 const GROUPS = [
   { group: 'robustez',    subAttrs: ['forca', 'destreza', 'vigor'],              color: '#f38ba8' },
@@ -11,33 +11,43 @@ const GROUPS = [
 
 function SubAttrRow({ group, subAttr, xpCost }) {
   const { character, dispatch } = useCharacter();
-  const value = character.attributes[group][subAttr];
-  const nextLevelCost = (value + 1) * xpCost;
+  const value    = character.attributes[group][subAttr];
+  const currentXp = character.status.xp.current;
+  const nextLevelCost = value < 10 ? (value + 1) * xpCost : null;
 
   return (
     <View style={styles.subRow}>
       <Text style={styles.subLabel}>{ATTRIBUTE_LABELS[subAttr]}</Text>
       <View style={styles.dotsRow}>
-        {Array.from({ length: 10 }).map((_, i) => (
-          <TouchableOpacity
-            key={i}
-            onPress={() =>
-              dispatch({
-                type: 'CHANGE_ATTRIBUTE',
-                group,
-                subAttr,
-                delta: (i + 1) - value,
-              })
-            }
-          >
-            <View style={[styles.dot, i < value ? styles.dotFilled : styles.dotEmpty]} />
-          </TouchableOpacity>
-        ))}
+        {Array.from({ length: 10 }).map((_, i) => {
+          const targetLevel = i + 1;
+          const isActive    = i < value;
+          const cost        = targetLevel > value ? xpCostForRange(value, targetLevel, xpCost) : 0;
+          const locked      = targetLevel > value && cost > currentXp;
+
+          return (
+            <TouchableOpacity
+              key={i}
+              disabled={locked}
+              onPress={() =>
+                dispatch({ type: 'CHANGE_ATTRIBUTE', group, subAttr, delta: targetLevel - value })
+              }
+            >
+              <View style={[
+                styles.dot,
+                isActive  ? styles.dotFilled   :
+                locked    ? styles.dotLocked    : styles.dotEmpty,
+              ]} />
+            </TouchableOpacity>
+          );
+        })}
       </View>
       <View style={styles.subRight}>
         <Text style={styles.subValue}>{value}</Text>
-        {value < 10 && (
-          <Text style={styles.xpHint}>{nextLevelCost} XP</Text>
+        {nextLevelCost !== null && (
+          <Text style={[styles.xpHint, nextLevelCost > currentXp && styles.xpHintInsuf]}>
+            {nextLevelCost} XP
+          </Text>
         )}
       </View>
     </View>
@@ -112,10 +122,12 @@ const styles = StyleSheet.create({
   subLabel: { color: '#cdd6f4', fontSize: 13, width: 95 },
   dotsRow:  { flexDirection: 'row', flex: 1, gap: 5, alignItems: 'center' },
   dot:      { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
-  dotFilled:{ backgroundColor: '#89b4fa', borderColor: '#89b4fa' },
-  dotEmpty: { backgroundColor: 'transparent', borderColor: '#45475a' },
+  dotFilled: { backgroundColor: '#89b4fa', borderColor: '#89b4fa' },
+  dotEmpty:  { backgroundColor: 'transparent', borderColor: '#45475a' },
+  dotLocked: { backgroundColor: 'transparent', borderColor: '#3d2233', borderStyle: 'dashed' },
 
-  subRight:  { alignItems: 'flex-end', minWidth: 42 },
-  subValue:  { color: '#6c7086', fontSize: 12 },
-  xpHint:    { color: '#45475a', fontSize: 10 },
+  subRight:     { alignItems: 'flex-end', minWidth: 42 },
+  subValue:     { color: '#6c7086', fontSize: 12 },
+  xpHint:       { color: '#45475a', fontSize: 10 },
+  xpHintInsuf:  { color: '#f38ba8' },
 });

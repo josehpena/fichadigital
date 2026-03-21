@@ -79,6 +79,12 @@ export const INITIAL_CHARACTER = {
 
   accessories: Array.from({ length: 10 }, emptyAccessory),
 
+  skillTree: {
+    trailCount: 0,
+    acquiredTrails: {},
+    // acquiredTrails format: { trailId: { cost: number, skills: { skillId: level } } }
+  },
+
   settings: {
     statusOrder: ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'],
     xpCosts: {
@@ -167,6 +173,16 @@ export const EQUIP_LABELS = {
 
 // Statuses cujo max é calculado automaticamente
 export const COMPUTED_STATUS_KEYS = ['vida', 'energia', 'mana', 'forcaDeVontade'];
+
+// Custo total de XP para subir do nível `from` até o nível `to`
+// Cada nível intermediário custa: novoNível × costPerLevel
+export function xpCostForRange(fromLevel, toLevel, costPerLevel) {
+  let total = 0;
+  for (let lvl = fromLevel + 1; lvl <= toLevel; lvl++) {
+    total += lvl * costPerLevel;
+  }
+  return total;
+}
 
 // Cálculo dos totais de defesa (apenas peças com durabilidade > 0)
 export function computeDefenseTotals(equipment, accessories) {

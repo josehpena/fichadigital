@@ -4,7 +4,18 @@ import {
   INITIAL_CHARACTER,
   COMPUTED_STATUS_KEYS,
   computeMaxValues,
+  SKILL_CATEGORIES,
+  xpCostForRange,
 } from '../data/initialCharacter';
+import { findTrail } from '../data/trailsData';
+
+// Descobre a categoria de uma perícia
+function getSkillCategory(skill) {
+  for (const [cat, skills] of Object.entries(SKILL_CATEGORIES)) {
+    if (skills.includes(skill)) return cat;
+  }
+  return null;
+}
 
 const STORAGE_KEY = '@fichadigital_v2';
 
@@ -47,6 +58,7 @@ function reducer(state, action) {
         status,
         equipment:   p.equipment   ?? INITIAL_CHARACTER.equipment,
         accessories: p.accessories ?? INITIAL_CHARACTER.accessories,
+        skillTree:   p.skillTree   ?? INITIAL_CHARACTER.skillTree,
         settings,
       };
     }
@@ -83,19 +95,39 @@ function reducer(state, action) {
 
     // { group, subAttr, delta }
     case 'CHANGE_ATTRIBUTE': {
-      const group = state.attributes[action.group];
-      const newVal = clamp((group[action.subAttr] || 0) + action.delta, 1, 10);
+      const group    = state.attributes[action.group];
+      const curVal   = group[action.subAttr] || 0;
+      const newVal   = clamp(curVal + action.delta, 1, 10);
       const newAttrs = {
         ...state.attributes,
         [action.group]: { ...group, [action.subAttr]: newVal },
       };
       const newStatus = applyComputedMaxes(state.status, newAttrs);
+
+      if (newVal > curVal) {
+        const xpCost  = state.settings.xpCosts[action.group] ?? 10;
+        const cost    = xpCostForRange(curVal, newVal, xpCost);
+        if (state.status.xp.current < cost) return state; // XP insuficiente
+        newStatus.xp  = { ...newStatus.xp, current: newStatus.xp.current - cost };
+      }
+
       return { ...state, attributes: newAttrs, status: newStatus };
     }
 
     // { skill, delta }
     case 'CHANGE_SKILL': {
-      const newVal = clamp((state.skills[action.skill] || 0) + action.delta, 0, 5);
+      const curVal = state.skills[action.skill] || 0;
+      const newVal = clamp(curVal + action.delta, 0, 5);
+
+      if (newVal > curVal) {
+        const cat    = getSkillCategory(action.skill);
+        const xpCost = state.settings.xpCosts[cat] ?? 5;
+        const cost   = xpCostForRange(curVal, newVal, xpCost);
+        if (state.status.xp.current < cost) return state; // XP insuficiente
+        const newXp  = { ...state.status.xp, current: state.status.xp.current - cost };
+        return { ...state, skills: { ...state.skills, [action.skill]: newVal }, status: { ...state.status, xp: newXp } };
+      }
+
       return { ...state, skills: { ...state.skills, [action.skill]: newVal } };
     }
 
@@ -159,6 +191,78 @@ function reducer(state, action) {
         settings: {
           ...state.settings,
           xpCosts: { ...state.settings.xpCosts, [action.key]: next },
+        },
+      };
+    }
+
+    // { trailId }
+    case 'ACQUIRE_TRAIL': {
+      if (state.skillTree.acquiredTrails[action.trailId]) return state; // already acquired
+      const trail = findTrail(action.trailId);
+      if (!trail) return state;
+      const nextCost = 40 + state.skillTree.trailCount * 20;
+      if (state.status.xp.current < nextCost) return state;
+      const newXp = { ...state.status.xp, current: state.status.xp.current - nextCost };
+      return {
+        ...state,
+        status: { ...state.status, xp: newXp },
+        skillTree: {
+          trailCount: state.skillTree.trailCount + 1,
+          acquiredTrails: {
+            ...state.skillTree.acquiredTrails,
+            [action.trailId]: { cost: nextCost, skills: {} },
+          },
+        },
+      };
+    }
+
+    // { trailId, skillId, targetLevel }
+    case 'LEARN_SKILL': {
+      const trailData = state.skillTree.acquiredTrails[action.trailId];
+      if (!trailData) return state;
+      const trail = findTrail(action.trailId);
+      if (!trail) return state;
+      const skill = trail.skills.find(s => s.id === action.skillId);
+      if (!skill) return state;
+      const curLevel = trailData.skills[action.skillId] ?? 0;
+      if (action.targetLevel <= curLevel || action.targetLevel > skill.maxLevel) return state;
+      const cost = xpCostForRange(curLevel, action.targetLevel, trailData.cost);
+      if (state.status.xp.current < cost) return state;
+      const newXp = { ...state.status.xp, current: state.status.xp.current - cost };
+      return {
+        ...state,
+        status: { ...state.status, xp: newXp },
+        skillTree: {
+          ...state.skillTree,
+          acquiredTrails: {
+            ...state.skillTree.acquiredTrails,
+            [action.trailId]: {
+              ...trailData,
+              skills: { ...trailData.skills, [action.skillId]: action.targetLevel },
+            },
+          },
+        },
+      };
+    }
+
+    // { trailId, skillId } — downgrade skill by 1 (no XP refund)
+    case 'UNLEARN_SKILL': {
+      const trailData = state.skillTree.acquiredTrails[action.trailId];
+      if (!trailData) return state;
+      const curLevel = trailData.skills[action.skillId] ?? 0;
+      if (curLevel <= 0) return state;
+      const newLevel = curLevel - 1;
+      const newSkills = { ...trailData.skills };
+      if (newLevel === 0) delete newSkills[action.skillId];
+      else newSkills[action.skillId] = newLevel;
+      return {
+        ...state,
+        skillTree: {
+          ...state.skillTree,
+          acquiredTrails: {
+            ...state.skillTree.acquiredTrails,
+            [action.trailId]: { ...trailData, skills: newSkills },
+          },
         },
       };
     }
