@@ -79,6 +79,12 @@ export const INITIAL_CHARACTER = {
 
   accessories: Array.from({ length: 10 }, emptyAccessory),
 
+  skillTree: {
+    trailCount: 0,
+    acquiredTrails: {},
+    // acquiredTrails format: { trailId: { cost: number, skills: { skillId: level } } }
+  },
+
   settings: {
     statusOrder: ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'],
     xpCosts: {

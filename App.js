@@ -9,15 +9,17 @@ import HomeScreen          from './src/screens/HomeScreen';
 import AttributesScreen    from './src/screens/AttributesScreen';
 import SkillsScreen        from './src/screens/SkillsScreen';
 import EquipmentScreen     from './src/screens/EquipmentScreen';
+import SkillTreeScreen    from './src/screens/SkillTreeScreen';
 import CustomizationModal  from './src/components/CustomizationModal';
 
 const Tab = createBottomTabNavigator();
 
 const TAB_ICONS = {
-  Status:     '❤️',
-  Atributos:  '⚔️',
-  Perícias:   '📖',
-  Equipamento:'🛡️',
+  Status:      '❤️',
+  Atributos:   '⚔️',
+  Perícias:    '📖',
+  Equipamento: '🛡️',
+  Habilidades: '🌟',
 };
 
 export default function App() {
@@ -74,6 +76,11 @@ export default function App() {
             name="Equipamento"
             component={EquipmentScreen}
             options={{ title: 'Equipamento' }}
+          />
+          <Tab.Screen
+            name="Habilidades"
+            component={SkillTreeScreen}
+            options={{ title: 'Habilidades' }}
           />
         </Tab.Navigator>
 
