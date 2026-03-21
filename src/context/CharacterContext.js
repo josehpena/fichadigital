@@ -8,6 +8,7 @@ import {
   xpCostForRange,
 } from '../data/initialCharacter';
 import { findTrail, findCategoryTrails } from '../data/trailsData';
+import { findTitleById } from '../data/titlesData';
 
 // Descobre a categoria de uma perícia
 function getSkillCategory(skill) {
@@ -26,12 +27,13 @@ function clamp(value, min = 0, max = Infinity) {
 }
 
 // Recalcula os tetos de status e clipa os valores atuais
-function applyComputedMaxes(status, attrs) {
+// statusBonuses: bônus fixos de títulos adquiridos, ex: { vida: 10 }
+function applyComputedMaxes(status, attrs, statusBonuses = {}) {
   const newMax = computeMaxValues(attrs);
   const updated = { ...status };
   COMPUTED_STATUS_KEYS.forEach((key) => {
     const s = status[key];
-    const max = newMax[key];
+    const max = newMax[key] + (statusBonuses[key] || 0);
     updated[key] = { ...s, max, current: Math.min(s.current, max) };
   });
   return updated;
@@ -43,7 +45,7 @@ function reducer(state, action) {
     case 'LOAD': {
       const p = action.payload;
       if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
-      const status = applyComputedMaxes(p.status, p.attributes);
+      const status = applyComputedMaxes(p.status, p.attributes, p.titles?.statusBonuses ?? {});
       // Mescla settings: preserva customizações salvas, garante campos novos
       const savedSettings = p.settings ?? {};
       const settings = {
@@ -59,6 +61,8 @@ function reducer(state, action) {
         equipment:   p.equipment   ?? INITIAL_CHARACTER.equipment,
         accessories: p.accessories ?? INITIAL_CHARACTER.accessories,
         skillTree:   p.skillTree   ?? INITIAL_CHARACTER.skillTree,
+        titles:      p.titles      ?? INITIAL_CHARACTER.titles,
+        inventory:   p.inventory   ?? INITIAL_CHARACTER.inventory,
         settings,
       };
     }
@@ -102,7 +106,7 @@ function reducer(state, action) {
         ...state.attributes,
         [action.group]: { ...group, [action.subAttr]: newVal },
       };
-      const newStatus = applyComputedMaxes(state.status, newAttrs);
+      const newStatus = applyComputedMaxes(state.status, newAttrs, state.titles?.statusBonuses ?? {});
 
       if (newVal > curVal) {
         const xpCost  = state.settings.xpCosts[action.group] ?? 10;
@@ -302,6 +306,62 @@ function reducer(state, action) {
           },
         },
       };
+    }
+
+    // { titleId }
+    case 'ACQUIRE_TITLE': {
+      const acquired = state.titles?.acquired ?? [];
+      if (acquired.includes(action.titleId)) return state;
+      const title = findTitleById(action.titleId);
+      if (!title) return state;
+
+      const newBonuses = { ...(state.titles?.statusBonuses ?? {}) };
+      for (const ef of title.efeitos ?? []) {
+        newBonuses[ef.status] = (newBonuses[ef.status] || 0) + ef.delta;
+      }
+
+      let newStatus = applyComputedMaxes(state.status, state.attributes, newBonuses);
+      // Aumenta o current proporcional ao bônus positivo
+      for (const ef of title.efeitos ?? []) {
+        if (ef.delta > 0 && COMPUTED_STATUS_KEYS.includes(ef.status)) {
+          const s = newStatus[ef.status];
+          newStatus = { ...newStatus, [ef.status]: { ...s, current: Math.min(s.current + ef.delta, s.max) } };
+        }
+      }
+
+      return {
+        ...state,
+        status: newStatus,
+        titles: { acquired: [...acquired, action.titleId], statusBonuses: newBonuses },
+      };
+    }
+
+    // ── Inventário ────────────────────────────────────────────────────────────
+
+    // { section: 'bolsa'|'cinto', index, field: 'nome'|'obs', value }
+    case 'INVENTORY_SET_ITEM': {
+      const section = state.inventory[action.section];
+      const newItens = [...section.itens];
+      newItens[action.index] = { ...newItens[action.index], [action.field]: action.value };
+      return { ...state, inventory: { ...state.inventory, [action.section]: { ...section, itens: newItens } } };
+    }
+
+    // Expande a bolsa em 1 slot (até o max pré-alocado)
+    case 'INVENTORY_EXPAND_BOLSA': {
+      const { bolsa } = state.inventory;
+      if (bolsa.capacidade >= bolsa.itens.length) return state;
+      return { ...state, inventory: { ...state.inventory, bolsa: { ...bolsa, capacidade: bolsa.capacidade + 1 } } };
+    }
+
+    case 'INVENTORY_TOGGLE_CINTO': {
+      const { cinto } = state.inventory;
+      return { ...state, inventory: { ...state.inventory, cinto: { ...cinto, ativo: !cinto.ativo } } };
+    }
+
+    // { delta }
+    case 'INVENTORY_CHANGE_MOEDAS': {
+      const novas = Math.max(0, (state.inventory.moedas || 0) + action.delta);
+      return { ...state, inventory: { ...state.inventory, moedas: novas } };
     }
 
     case 'RESET':
