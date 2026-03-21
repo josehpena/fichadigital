@@ -149,6 +149,28 @@ function reducer(state, action) {
       };
     }
 
+    // { slot, tira }  — adiciona tira de couro ao slot
+    case 'ADD_EQUIP_TIRA': {
+      const slot = state.equipment[action.slot];
+      return {
+        ...state,
+        equipment: {
+          ...state.equipment,
+          [action.slot]: { ...slot, tiras: [...(slot.tiras ?? []), action.tira] },
+        },
+      };
+    }
+
+    // { slot, index }  — remove tira de couro do slot
+    case 'REMOVE_EQUIP_TIRA': {
+      const slot = state.equipment[action.slot];
+      const tiras = (slot.tiras ?? []).filter((_, i) => i !== action.index);
+      return {
+        ...state,
+        equipment: { ...state.equipment, [action.slot]: { ...slot, tiras } },
+      };
+    }
+
     // { slot, delta }  — altera durabilidade atual
     case 'CHANGE_EQUIP_DURABILITY': {
       const slot = state.equipment[action.slot];
