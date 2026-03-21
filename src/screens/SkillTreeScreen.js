@@ -21,50 +21,39 @@ function SkillRow({ trailId, trailCost, skill, onLongPress }) {
   const trailData = character.skillTree.acquiredTrails[trailId];
   const curLevel  = trailData?.skills[skill.id] ?? 0;
   const currentXp = character.status.xp.current;
-
-  const handleDot = (targetLevel) => {
-    if (targetLevel === curLevel) {
-      dispatch({ type: 'UNLEARN_SKILL', trailId, skillId: skill.id });
-    } else if (targetLevel > curLevel) {
-      dispatch({ type: 'LEARN_SKILL', trailId, skillId: skill.id, targetLevel });
-    }
-  };
+  const atMax     = curLevel >= skill.maxLevel;
+  const nextCost  = atMax ? 0 : xpCostForRange(curLevel, curLevel + 1, trailCost);
+  const canLearn  = !atMax && nextCost <= currentXp;
 
   return (
     <TouchableOpacity
       style={styles.skillRow}
       onLongPress={() => onLongPress && onLongPress(skill, curLevel, trailCost)}
-      activeOpacity={0.8}
+      activeOpacity={0.9}
     >
       <Text style={styles.skillName}>{skill.nome}</Text>
       <View style={styles.dotsRow}>
-        {Array.from({ length: skill.maxLevel }).map((_, i) => {
-          const target = i + 1;
-          const isActive = i < curLevel;
-          const locked = target > curLevel && xpCostForRange(curLevel, target, trailCost) > currentXp;
-
-          return (
-            <TouchableOpacity
-              key={i}
-              disabled={locked}
-              onPress={() => handleDot(target)}
-            >
-              <View style={[
-                styles.dot,
-                isActive ? styles.dotFilled :
-                locked   ? styles.dotLocked : styles.dotEmpty,
-              ]} />
-            </TouchableOpacity>
-          );
-        })}
+        {Array.from({ length: skill.maxLevel }).map((_, i) => (
+          <View
+            key={i}
+            style={[styles.dot, i < curLevel ? styles.dotFilled : styles.dotEmpty]}
+          />
+        ))}
       </View>
-      {curLevel < skill.maxLevel && (
-        <Text style={[
-          styles.xpHint,
-          xpCostForRange(curLevel, curLevel + 1, trailCost) > currentXp && styles.xpHintInsuf,
-        ]}>
-          {xpCostForRange(curLevel, curLevel + 1, trailCost)} XP
-        </Text>
+      {atMax ? (
+        <View style={styles.maxBadge}>
+          <Text style={styles.maxBadgeText}>MAX</Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.acquireSkillBtn, !canLearn && styles.acquireSkillBtnOff]}
+          disabled={!canLearn}
+          onPress={() => dispatch({ type: 'LEARN_SKILL', trailId, skillId: skill.id, targetLevel: curLevel + 1 })}
+        >
+          <Text style={[styles.acquireSkillBtnText, !canLearn && styles.acquireSkillBtnTextOff]}>
+            +{nextCost} XP
+          </Text>
+        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
@@ -331,14 +320,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   skillName: { color: '#cdd6f4', fontSize: 12, flex: 1 },
-  dotsRow:   { flexDirection: 'row', gap: 6 },
-  dot:       { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
-  dotFilled:   { backgroundColor: '#89b4fa', borderColor: '#89b4fa' },
-  dotEmpty:    { backgroundColor: 'transparent', borderColor: '#45475a' },
-  dotLocked:   { backgroundColor: 'transparent', borderColor: '#3d2233', borderStyle: 'dashed' },
-  dotDisabled: { backgroundColor: 'transparent', borderColor: '#313244' },
-  xpHint:      { color: '#45475a', fontSize: 10, minWidth: 36, textAlign: 'right' },
-  xpHintInsuf: { color: '#f38ba8' },
+  dotsRow:   { flexDirection: 'row', gap: 5 },
+  dot:       { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
+  dotFilled: { backgroundColor: '#89b4fa', borderColor: '#89b4fa' },
+  dotEmpty:  { backgroundColor: 'transparent', borderColor: '#45475a' },
+  acquireSkillBtn: {
+    backgroundColor: '#1d3052', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: '#89b4fa',
+  },
+  acquireSkillBtnOff: { backgroundColor: '#1e1e2e', borderColor: '#2e2e4e' },
+  acquireSkillBtnText:    { color: '#89b4fa', fontSize: 11, fontWeight: '700' },
+  acquireSkillBtnTextOff: { color: '#3d3d5c' },
+  maxBadge: { backgroundColor: '#313244', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  maxBadgeText: { color: '#45475a', fontSize: 10, fontWeight: '700' },
 
   // Modal
   modalOverlay: {
