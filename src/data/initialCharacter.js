@@ -22,9 +22,10 @@ const initMax = computeMaxValues(INITIAL_ATTRIBUTES);
 
 // ─── Equipamentos iniciais ────────────────────────────────────────────────────
 const emptyArmorSlot = () => ({
-  armadura: 0, resMagica: 0, reputacao: 0, efeitos: '', durabilidade: 10, durabilidadeMax: 10,
+  nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '',
+  durabilidade: 10, durabilidadeMax: 10, nivel: 1, tiras: [],
 });
-const emptyHandSlot = () => ({ nome: '', dano: '', efeitos: '' });
+const emptyHandSlot = () => ({ tipo: '', nome: '', dano: '', efeitos: '', nivel: 1, tiras: [] });
 const emptyAccessory = () => ({ nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '' });
 
 // ─── Personagem inicial ───────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export const INITIAL_CHARACTER = {
   titles: {
     acquired: [],       // [titleId, ...]
     statusBonuses: {},  // { vida: 10, ... } — soma dos efeitos dos títulos adquiridos
+    bindings: {},       // { titleId: [{trailId, skillId, nome}] } — habilidades vinculadas
   },
 
   inventory: {
