@@ -6,6 +6,7 @@ import {
 import { useCharacter } from '../context/CharacterContext';
 import StatusCard from '../components/StatusCard';
 import { computeDefenseTotals } from '../data/initialCharacter';
+import { TITLE_BY_ID } from '../data/titlesData';
 
 
 export default function HomeScreen() {
@@ -85,15 +86,31 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Características Raciais */}
+      {/* Características */}
       <View style={styles.sectionBox}>
-        <Text style={styles.sectionTitle}>Características Raciais</Text>
+        <Text style={styles.sectionTitle}>Características</Text>
+
+        {/* Benefícios dos títulos adquiridos */}
+        {(character.titles?.acquired ?? []).map(titleId => {
+          const title = TITLE_BY_ID[titleId];
+          if (!title?.beneficios?.length) return null;
+          return (
+            <View key={titleId} style={styles.titleBlock}>
+              <Text style={styles.titleBlockName}>{title.nome}</Text>
+              {title.beneficios.map((b, i) => (
+                <Text key={i} style={styles.beneficioText}>• {b}</Text>
+              ))}
+            </View>
+          );
+        })}
+
+        {/* Campo livre (racial, dons, etc.) */}
         <TextInput
           style={styles.racialInput}
           multiline
           value={character.racialTraits}
           onChangeText={(v) => dispatch({ type: 'SET_RACIAL_TRAITS', value: v })}
-          placeholder="Descreva as características raciais..."
+          placeholder="Características adicionais (raça, dons...)..."
           placeholderTextColor="#6c7086"
         />
       </View>
@@ -150,5 +167,8 @@ const styles = StyleSheet.create({
     color: '#89b4fa', fontSize: 13, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10,
   },
-  racialInput: { color: '#cdd6f4', fontSize: 14, minHeight: 60, textAlignVertical: 'top' },
+  titleBlock:     { marginBottom: 8 },
+  titleBlockName: { color: '#f9e2af', fontSize: 12, fontWeight: '700', marginBottom: 3 },
+  beneficioText:  { color: '#cdd6f4', fontSize: 13, lineHeight: 19, paddingLeft: 4 },
+  racialInput:    { color: '#a6adc8', fontSize: 13, minHeight: 40, textAlignVertical: 'top', marginTop: 6 },
 });
