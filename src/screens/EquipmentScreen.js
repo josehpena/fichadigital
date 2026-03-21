@@ -12,18 +12,11 @@ import { TRAILS_ARMAS } from '../data/trailsData';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Retorna categorias de TRAILS_ARMAS onde o personagem adquiriu pelo menos 1 trilha
-function getAvailableWeaponCategories(acquiredTrails) {
+// Retorna todas as categorias únicas de armas
+function getAllWeaponCategories() {
   const cats = new Set();
-  for (const trail of TRAILS_ARMAS) {
-    if (acquiredTrails?.[trail.id]) cats.add(trail.categoria);
-  }
+  for (const trail of TRAILS_ARMAS) cats.add(trail.categoria);
   return [...cats];
-}
-
-// Retorna todas as trilhas de arma de uma categoria
-function getTrailsOfCategory(categoria) {
-  return TRAILS_ARMAS.filter(t => t.categoria === categoria);
 }
 
 const ATTR_SUB_KEYS = ['forca', 'destreza', 'vigor', 'manha', 'carisma', 'etiqueta', 'percepcao', 'raciocinio', 'inteligencia'];
@@ -149,7 +142,7 @@ function TirasModal({ visible, slotKey, tiras, onClose }) {
 function WeaponModal({ visible, slotKey, onClose }) {
   const { character, dispatch } = useCharacter();
   const equip = character.equipment[slotKey];
-  const availCats = getAvailableWeaponCategories(character.skillTree?.acquiredTrails);
+  const availCats = getAllWeaponCategories();
   const [showTiras, setShowTiras] = useState(false);
 
   const setField = (field, value) =>
@@ -183,21 +176,17 @@ function WeaponModal({ visible, slotKey, onClose }) {
 
           {/* Tipo de arma */}
           <Text style={ms.sectionLabel}>Tipo de Arma</Text>
-          {availCats.length === 0 ? (
-            <Text style={ms.emptyHint}>Adquira trilhas de armas para escolher o tipo.</Text>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={ms.catPicker}>
-              {availCats.map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[ms.catChip, equip.tipo === cat && ms.catChipActive]}
-                  onPress={() => selectCat(cat)}
-                >
-                  <Text style={[ms.catChipText, equip.tipo === cat && ms.catChipTextActive]}>{cat}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={ms.catPicker}>
+            {availCats.map(cat => (
+              <TouchableOpacity
+                key={cat}
+                style={[ms.catChip, equip.tipo === cat && ms.catChipActive]}
+                onPress={() => selectCat(cat)}
+              >
+                <Text style={[ms.catChipText, equip.tipo === cat && ms.catChipTextActive]}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
           {/* Nome personalizado */}
           <Text style={ms.sectionLabel}>Nome</Text>
