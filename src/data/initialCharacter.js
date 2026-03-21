@@ -85,6 +85,23 @@ export const INITIAL_CHARACTER = {
     // acquiredTrails format: { trailId: { cost: number, skills: { skillId: level } } }
   },
 
+  titles: {
+    acquired: [],       // [titleId, ...]
+    statusBonuses: {},  // { vida: 10, ... } — soma dos efeitos dos títulos adquiridos
+  },
+
+  inventory: {
+    bolsa: {
+      capacidade: 6,
+      itens: Array.from({ length: 40 }, () => ({ nome: '', obs: '' })),
+    },
+    moedas: 0,
+    cinto: {
+      ativo: false,
+      itens: Array.from({ length: 10 }, () => ({ nome: '', obs: '' })),
+    },
+  },
+
   settings: {
     statusOrder: ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'],
     xpCosts: {
