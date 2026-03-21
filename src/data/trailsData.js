@@ -3228,3 +3228,8 @@ export function findTrail(trailId) {
   }
   return null;
 }
+
+// Retorna todas as trilhas da mesma categoria (para armas agrupadas)
+export function findCategoryTrails(categoria) {
+  return TRAILS_ARMAS.filter(t => t.categoria === categoria);
+}
