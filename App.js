@@ -1,14 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
+import { Text, TouchableOpacity } from 'react-native';
 
 import { CharacterProvider } from './src/context/CharacterContext';
-import HomeScreen       from './src/screens/HomeScreen';
-import AttributesScreen from './src/screens/AttributesScreen';
-import SkillsScreen     from './src/screens/SkillsScreen';
-import EquipmentScreen  from './src/screens/EquipmentScreen';
+import HomeScreen          from './src/screens/HomeScreen';
+import AttributesScreen    from './src/screens/AttributesScreen';
+import SkillsScreen        from './src/screens/SkillsScreen';
+import EquipmentScreen     from './src/screens/EquipmentScreen';
+import CustomizationModal  from './src/components/CustomizationModal';
 
 const Tab = createBottomTabNavigator();
 
@@ -20,6 +21,8 @@ const TAB_ICONS = {
 };
 
 export default function App() {
+  const [showCustom, setShowCustom] = useState(false);
+
   return (
     <CharacterProvider>
       <NavigationContainer>
@@ -41,6 +44,15 @@ export default function App() {
             headerStyle:      { backgroundColor: '#1e1e2e' },
             headerTintColor:  '#cdd6f4',
             headerTitleStyle: { fontWeight: 'bold' },
+            headerRight: () => (
+              <TouchableOpacity
+                onPress={() => setShowCustom(true)}
+                style={{ marginRight: 16, padding: 4 }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={{ fontSize: 20 }}>✏️</Text>
+              </TouchableOpacity>
+            ),
           })}
         >
           <Tab.Screen
@@ -64,6 +76,8 @@ export default function App() {
             options={{ title: 'Equipamento' }}
           />
         </Tab.Navigator>
+
+        <CustomizationModal visible={showCustom} onClose={() => setShowCustom(false)} />
       </NavigationContainer>
     </CharacterProvider>
   );

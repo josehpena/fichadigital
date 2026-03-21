@@ -78,6 +78,18 @@ export const INITIAL_CHARACTER = {
   },
 
   accessories: Array.from({ length: 10 }, emptyAccessory),
+
+  settings: {
+    statusOrder: ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'],
+    xpCosts: {
+      robustez:    10,
+      reputacao:   10,
+      concentracao:10,
+      Físicos:     5,
+      Sociais:     5,
+      Mentais:     5,
+    },
+  },
 };
 
 // ─── Categorias e labels ──────────────────────────────────────────────────────

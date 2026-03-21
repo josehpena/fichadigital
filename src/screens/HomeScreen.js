@@ -7,7 +7,6 @@ import { useCharacter } from '../context/CharacterContext';
 import StatusCard from '../components/StatusCard';
 import { computeDefenseTotals } from '../data/initialCharacter';
 
-const STATUS_KEYS = ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'];
 
 export default function HomeScreen() {
   const { character, dispatch } = useCharacter();
@@ -99,9 +98,9 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Status */}
+      {/* Status – ordem customizável */}
       <Text style={styles.sectionTitle}>Status</Text>
-      {STATUS_KEYS.map((key) => (
+      {character.settings.statusOrder.map((key) => (
         <StatusCard key={key} statusKey={key} />
       ))}
     </ScrollView>
