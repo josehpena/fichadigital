@@ -88,6 +88,7 @@ export const INITIAL_CHARACTER = {
   titles: {
     acquired: [],       // [titleId, ...]
     statusBonuses: {},  // { vida: 10, ... } — soma dos efeitos dos títulos adquiridos
+    bindings: {},       // { titleId: [{trailId, skillId, nome}] } — habilidades vinculadas
   },
 
   inventory: {

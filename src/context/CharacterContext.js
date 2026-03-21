@@ -329,10 +329,19 @@ function reducer(state, action) {
         }
       }
 
+      const newBindings = { ...(state.titles?.bindings ?? {}) };
+      if (action.boundSkills?.length > 0) {
+        newBindings[action.titleId] = action.boundSkills; // [{trailId, skillId, nome}]
+      }
+
       return {
         ...state,
         status: newStatus,
-        titles: { acquired: [...acquired, action.titleId], statusBonuses: newBonuses },
+        titles: {
+          acquired: [...acquired, action.titleId],
+          statusBonuses: newBonuses,
+          bindings: newBindings,
+        },
       };
     }
 

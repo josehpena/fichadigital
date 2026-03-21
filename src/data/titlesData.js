@@ -199,6 +199,24 @@ const CATEGORIAS_RAW = [
   },
 ];
 
+// ── Requisitos de habilidades (vinculação) ────────────────────────────────────
+// Títulos com estas entradas exigem que o jogador selecione habilidades específicas
+// do skill tree no momento da aquisição. As habilidades ficam "vinculadas" e não
+// podem ser usadas para satisfazer o requisito de outro título.
+export const REQUISITO_HABILIDADES = {
+  // MILITAR / FÍSICA – Nível 1
+  rufiao:                 { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
+  guerreiro:              { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
+  recruta:                { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
+  gatuno:                 { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
+  // MILITAR / MÁGICA – Nível 1
+  aprendiz_de_conjurador: { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
+  seguidor_da_magia:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
+  conjurador_tatico:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
+  // OFICIAL
+  membro_guilda_aventureiros: { fonte: 'profissoes', quantidade: 3, nivel: 1, mesmaCategoria: false },
+};
+
 // ── Build maps ─────────────────────────────────────────────────────────────────
 function buildMaps() {
   const all = [];
@@ -219,7 +237,7 @@ function buildMaps() {
   const byId = {};
   const nameToId = {};
   all.forEach(t => {
-    byId[t.id] = t;
+    byId[t.id] = { ...t, requisitoHabilidades: REQUISITO_HABILIDADES[t.id] ?? null };
     nameToId[t.nome.toLowerCase().trim()] = t.id;
   });
 
