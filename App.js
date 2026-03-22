@@ -12,6 +12,7 @@ import EquipmentScreen     from './src/screens/EquipmentScreen';
 import SkillTreeScreen    from './src/screens/SkillTreeScreen';
 import TitlesScreen       from './src/screens/TitlesScreen';
 import InventoryScreen    from './src/screens/InventoryScreen';
+import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
 import CustomizationModal  from './src/components/CustomizationModal';
 
 const Tab = createBottomTabNavigator();
@@ -24,6 +25,7 @@ const TAB_ICONS = {
   Habilidades: '🌟',
   Títulos:     '👑',
   Inventário:  '🎒',
+  Turno:       '⚔️',
 };
 
 export default function App() {
@@ -95,6 +97,11 @@ export default function App() {
             name="Inventário"
             component={InventoryScreen}
             options={{ title: 'Inventário' }}
+          />
+          <Tab.Screen
+            name="Turno"
+            component={TurnAssistantScreen}
+            options={{ title: 'Assistente de Turno' }}
           />
         </Tab.Navigator>
 
