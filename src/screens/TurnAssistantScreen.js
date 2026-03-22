@@ -12,6 +12,60 @@ import { TITLE_BY_ID } from '../data/titlesData';
 const RANGED_CATEGORIES = ['ARCOS'];
 const MAGIC_WEAPON_CATEGORIES = ['CETROS MÁGICOS', 'VARINHAS', 'SUPORTE DE CAMPO', 'SUPORTE MÁGICO', 'SUPORTE CERIMONIAL'];
 
+// Tipo de dano por categoria de arma
+const WEAPON_DAMAGE_TYPES = {
+  'ESPADAS':            ['Cortante'],
+  'MACHADOS':           ['Cortante'],
+  'ARMAS LONGAS':       ['Perfurante'],
+  'ARCOS':              ['Perfurante'],
+  'ARMAS CURTAS':       ['Cortante', 'Perfurante'],
+  'CETROS MÁGICOS':     ['Contundente', 'Mágico'],
+  'VARINHAS':           ['Mágico'],
+  'ESCUDOS':            ['Contundente'],
+  'SUPORTE DE CAMPO':   ['Suporte'],
+  'SUPORTE MÁGICO':     ['Mágico'],
+  'SUPORTE CERIMONIAL': ['Suporte'],
+};
+
+const DAMAGE_TYPE_COLORS = {
+  Cortante:    '#f38ba8',
+  Perfurante:  '#fab387',
+  Contundente: '#a6e3a1',
+  Mágico:      '#cba6f7',
+  Suporte:     '#89b4fa',
+};
+
+// Palavras-chave de efeitos nos textos das habilidades
+const EFFECT_KEYWORDS = [
+  { re: /pressão/i,              label: 'Pressão' },
+  { re: /sangramento/i,          label: 'Sangramento' },
+  { re: /envenenado|veneno/i,    label: 'Veneno' },
+  { re: /perfura|penetra/i,      label: 'Penetração' },
+  { re: /engajado/i,             label: 'Engajado' },
+  { re: /desmaio|desmaia/i,      label: 'Desmaio' },
+  { re: /empurr|deslocamento/i,  label: 'Deslocamento' },
+];
+
+function getWeaponDamageTypes(tipoId) {
+  const trail = trailById(tipoId);
+  return WEAPON_DAMAGE_TYPES[trail?.categoria ?? ''] ?? [];
+}
+
+// Extrai efeitos mencionados nos textos das habilidades selecionadas
+function extractEffects(skills, skillLevels) {
+  const found = new Set();
+  for (const sk of skills) {
+    const selLv = skillLevels[sk.id] ?? 0;
+    for (let lv = 1; lv <= selLv; lv++) {
+      const desc = sk.niveis[String(lv)] ?? '';
+      for (const kw of EFFECT_KEYWORDS) {
+        if (kw.re.test(desc)) found.add(kw.label);
+      }
+    }
+  }
+  return [...found];
+}
+
 const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
 const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
 const DEFAULT_DURACAO     = {
@@ -115,15 +169,23 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 
   // Fórmula de dano base
   let formula = null;
+  let acertoFormula = null; // separado para armas de distância
   if (weapon) {
     if (ranged) {
-      formula = {
+      acertoFormula = {
         partes: [
           { label: 'Armas Range', val: armasRange },
           { label: 'Destreza', val: destreza },
-          { label: `Nível (${nivel})`, val: nivel },
+          { label: 'd20', val: 'd20', dado: true },
         ],
-        total: armasRange + destreza + nivel,
+        total: armasRange + destreza,
+      };
+      formula = {
+        partes: [
+          { label: `Nível (${nivel})`, val: nivel },
+          { label: 'Força', val: forca },
+        ],
+        total: nivel + forca,
       };
     } else if (twoHand) {
       formula = {
@@ -208,6 +270,28 @@ function AttackPanel({ actionsLeft, onConfirm }) {
         </>
       )}
 
+      {acertoFormula && (
+        <View style={s.formulaCard}>
+          <Text style={s.formulaTitle}>🎯 Teste de Acerto</Text>
+          <View style={s.formulaParts}>
+            {acertoFormula.partes.map((p, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <Text style={s.formulaOp}>+</Text>}
+                <View style={s.formulaPart}>
+                  <Text style={p.dado ? s.formulaValDado : s.formulaVal}>{p.val}</Text>
+                  <Text style={s.formulaLbl}>{p.label}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+            <Text style={s.formulaOp}>=</Text>
+            <View style={[s.formulaPart, s.formulaTotal]}>
+              <Text style={s.formulaTotalVal}>{acertoFormula.total} + d20</Text>
+              <Text style={s.formulaLbl}>Base</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
       {formula && (
         <View style={s.formulaCard}>
           <Text style={s.formulaTitle}>⚔️ Dano Base</Text>
@@ -227,7 +311,7 @@ function AttackPanel({ actionsLeft, onConfirm }) {
               <Text style={s.formulaLbl}>Total</Text>
             </View>
           </View>
-          <Text style={s.formulaNote}>+ d20 de acerto (role separado)</Text>
+          {!ranged && <Text style={s.formulaNote}>+ d20 de acerto (role separado)</Text>}
         </View>
       )}
 
@@ -284,6 +368,31 @@ function AttackPanel({ actionsLeft, onConfirm }) {
         </>
       )}
 
+      {/* Efeitos aplicados */}
+      {weapon && (() => {
+        const dmgTypes = getWeaponDamageTypes(weapon.tipo);
+        const skillEffects = extractEffects(acquiredSkills, skillLevels);
+        const all = [...dmgTypes, ...skillEffects];
+        if (all.length === 0) return null;
+        return (
+          <View style={s.effectsBox}>
+            <Text style={s.effectsBoxLabel}>Efeitos aplicados:</Text>
+            <View style={s.effectsTags}>
+              {dmgTypes.map(t => (
+                <View key={t} style={[s.effectTag, { borderColor: DAMAGE_TYPE_COLORS[t] ?? '#6c7086' }]}>
+                  <Text style={[s.effectTagText, { color: DAMAGE_TYPE_COLORS[t] ?? '#6c7086' }]}>{t}</Text>
+                </View>
+              ))}
+              {skillEffects.map(t => (
+                <View key={t} style={[s.effectTag, s.effectTagSkill]}>
+                  <Text style={s.effectTagTextSkill}>{t}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      })()}
+
       {/* Resumo de energia */}
       {weapon && (
         <View style={[s.energySummary, !podeAtacar && energiaAtual < totalEnergy && s.energySummaryWarn]}>
@@ -310,18 +419,32 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 function DefendPanel({ actionsLeft, onConfirm }) {
   const { character, dispatch } = useCharacter();
   const { skills } = character;
-  const reflexo   = skills?.reflexo   ?? 0;
-  const esportes  = skills?.esportes  ?? 0;
-  const [mode, setMode] = useState('bloquear');
+  const reflexo  = skills?.reflexo  ?? 0;
+  const esportes = skills?.esportes ?? 0;
+  const [mode, setMode]           = useState('bloquear');
+  const [shieldSkillLevels, setShieldSkillLevels] = useState({});
 
   const { totalArmadura } = computeDefenseTotals(character.equipment, character.accessories);
 
+  // Detecta escudo equipado numa das mãos
+  const shieldSlot = HAND_SLOTS.map(k => character.equipment[k]).find(
+    eq => trailById(eq?.tipo)?.categoria === 'ESCUDOS'
+  ) ?? null;
+  const shieldSkills = shieldSlot
+    ? getWeaponSkills(shieldSlot.tipo, character.skillTree?.acquiredTrails)
+    : [];
+  const shieldSkillCost = Object.values(shieldSkillLevels).reduce((a, v) => a + v, 0);
+  const shieldEffects = extractEffects(shieldSkills, shieldSkillLevels);
+
+  const energiaAtual = character.status?.energia?.current ?? 0;
+  const energyCost = mode === 'esquivar' ? 1 + shieldSkillCost : shieldSkillCost;
+  const podeDefender = actionsLeft >= 1 && energiaAtual >= energyCost;
+
   function confirm() {
-    if (actionsLeft < 1) return;
-    if (mode === 'esquivar') {
-      dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -1 });
-    }
+    if (!podeDefender) return;
+    if (energyCost > 0) dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -energyCost });
     onConfirm();
+    setShieldSkillLevels({});
   }
 
   return (
@@ -367,15 +490,67 @@ function DefendPanel({ actionsLeft, onConfirm }) {
         </View>
       )}
 
+      {/* Habilidades do escudo (se equipado) */}
+      {mode === 'bloquear' && shieldSkills.length > 0 && (
+        <>
+          <Text style={s.subLabel}>Habilidades do Escudo</Text>
+          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
+          {shieldSkills.map(sk => {
+            const selLv = shieldSkillLevels[sk.id] ?? 0;
+            return (
+              <View key={sk.id} style={[s.skillCard, selLv > 0 && s.skillCardActive]}>
+                <View style={s.skillCardHeader}>
+                  <Text style={[s.skillName, selLv > 0 && s.skillNameActive]}>{sk.nome}</Text>
+                  <View style={s.lvlPicker}>
+                    <TouchableOpacity style={[s.lvlBtn, selLv === 0 && s.lvlBtnOff]} onPress={() => setShieldSkillLevels(p => ({ ...p, [sk.id]: 0 }))}>
+                      <Text style={[s.lvlBtnText, selLv === 0 && s.lvlBtnTextOff]}>—</Text>
+                    </TouchableOpacity>
+                    {Array.from({ length: sk.level }, (_, i) => i + 1).map(lv => (
+                      <TouchableOpacity key={lv} style={[s.lvlBtn, selLv >= lv && s.lvlBtnActive]} onPress={() => setShieldSkillLevels(p => ({ ...p, [sk.id]: lv }))}>
+                        <Text style={[s.lvlBtnText, selLv >= lv && s.lvlBtnTextActive]}>{lv}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {selLv > 0 && <Text style={s.lvlCost}>−{selLv}⚡</Text>}
+                  </View>
+                </View>
+                {selLv > 0 && Array.from({ length: selLv }, (_, i) => i + 1).map(lv => {
+                  const desc = sk.niveis[String(lv)];
+                  return desc ? (
+                    <View key={lv} style={s.lvlDesc}>
+                      <Text style={s.lvlDescBadge}>Nv {lv}</Text>
+                      <Text style={s.lvlDescText}>{desc}</Text>
+                    </View>
+                  ) : null;
+                })}
+              </View>
+            );
+          })}
+        </>
+      )}
+
+      {/* Efeitos do bloqueio */}
+      {mode === 'bloquear' && shieldEffects.length > 0 && (
+        <View style={s.effectsBox}>
+          <Text style={s.effectsBoxLabel}>Efeitos do bloqueio:</Text>
+          <View style={s.effectsTags}>
+            {shieldEffects.map(t => (
+              <View key={t} style={[s.effectTag, s.effectTagSkill]}>
+                <Text style={s.effectTagTextSkill}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       <TouchableOpacity
-        style={[s.confirmBtn, actionsLeft < 1 && s.confirmBtnDisabled]}
+        style={[s.confirmBtn, !podeDefender && s.confirmBtnDisabled]}
         onPress={confirm}
-        disabled={actionsLeft < 1}
+        disabled={!podeDefender}
       >
         <Text style={s.confirmBtnText}>
           {mode === 'esquivar'
-            ? 'Confirmar Esquiva  −1 Ação  −1 Energia'
-            : 'Confirmar Bloqueio  −1 Ação'}
+            ? `Confirmar Esquiva  −1 Ação${energyCost > 1 ? `  −${energyCost} Energia` : '  −1 Energia'}`
+            : `Confirmar Bloqueio  −1 Ação${shieldSkillCost > 0 ? `  −${shieldSkillCost} Energia` : ''}`}
         </Text>
       </TouchableOpacity>
     </View>
@@ -721,7 +896,8 @@ const s = StyleSheet.create({
   formulaTitle: { color: '#cdd6f4', fontSize: 13, fontWeight: '700', marginBottom: 10 },
   formulaParts: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   formulaPart:  { alignItems: 'center', minWidth: 50 },
-  formulaVal:   { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
+  formulaVal:     { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
+  formulaValDado: { color: '#f9e2af', fontSize: 20, fontWeight: 'bold', fontStyle: 'italic' },
   formulaLbl:   { color: '#6c7086', fontSize: 10, textAlign: 'center' },
   formulaOp:    { color: '#45475a', fontSize: 18, fontWeight: 'bold', alignSelf: 'center' },
   formulaTotal: { backgroundColor: '#1e3a5f', borderRadius: 8, padding: 6 },
@@ -756,6 +932,14 @@ const s = StyleSheet.create({
   energySummaryLabel:{ color: '#6c7086', fontSize: 12 },
   energySummaryVal:  { color: '#cdd6f4', fontSize: 13, fontWeight: '700', flex: 1 },
   energySummaryCur:  { color: '#45475a', fontSize: 11 },
+
+  effectsBox:      { backgroundColor: '#1e1e2e', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#2e2e4e' },
+  effectsBoxLabel: { color: '#6c7086', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 },
+  effectsTags:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  effectTag:       { borderRadius: 6, borderWidth: 1.5, paddingHorizontal: 8, paddingVertical: 3 },
+  effectTagText:   { fontSize: 12, fontWeight: '700' },
+  effectTagSkill:      { borderColor: '#f9e2af' },
+  effectTagTextSkill:  { color: '#f9e2af', fontSize: 12, fontWeight: '700' },
 
   // Magias
   spellCard:       { backgroundColor: '#1e1e2e', borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#2e2e4e', overflow: 'hidden' },
