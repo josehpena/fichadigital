@@ -66,7 +66,165 @@ function extractEffects(skills, skillLevels) {
   return [...found];
 }
 
-const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
+// ─── Dados de Mira ────────────────────────────────────────────────────────────
+
+const ALVOS_HUMANOIDE = [
+  {
+    id: 'membros',
+    label: 'Membros',
+    dificuldade: 20,
+    cortanteOnly: false,
+    efeitos: [
+      { hits: 1, efeito: '+5 dificuldade em ações na cena' },
+      { hits: 2, efeito: '+10 dificuldade em ações na cena' },
+      { hits: 3, efeito: 'Perde função do membro até se recuperar' },
+      { hits: 4, efeito: 'Decepação do membro' },
+    ],
+    nota: 'Efeito acumula a cada acerto consecutivo no mesmo membro',
+  },
+  {
+    id: 'orgaos',
+    label: 'Órgãos',
+    dificuldade: 25,
+    cortanteOnly: true,
+    efeito: 'Causa 3 de Sangramento (requer dano Cortante)',
+  },
+  {
+    id: 'coracao',
+    label: 'Coração',
+    dificuldade: 30,
+    cortanteOnly: true,
+    efeito: 'Causa 6 de Sangramento (requer dano Cortante)',
+  },
+  {
+    id: 'cabeca',
+    label: 'Cabeça',
+    dificuldade: 35,
+    cortanteOnly: false,
+    efeito: 'Desmaio. Alvo faz 1 teste/turno para despertar (Concentração + d20 ≥ 50 − Vida máxima); falha reduz dificuldade em 5 no próximo',
+  },
+];
+
+const ALVOS_OBJETO_TAMANHO = ['Grande', 'Médio', 'Pequeno'];
+const ALVOS_OBJETO_VELOC   = ['Normal', 'Rápido/Assimétrico'];
+const OBJETO_DIFICULDADE   = {
+  'Grande-Normal': 20, 'Médio-Normal': 20, 'Pequeno-Normal': 20,
+  'Grande-Rápido/Assimétrico': 25,
+  'Médio-Rápido/Assimétrico':  30,
+  'Pequeno-Rápido/Assimétrico': 35,
+};
+
+const TAMANHO_VOLUME = { Grande: 'acima de 2m³', Médio: 'entre 1-2m³', Pequeno: 'abaixo de 1m³' };
+
+// ─── Componente de Mira ───────────────────────────────────────────────────────
+function MiraPanel({ damageTypes }) {
+  const [tipoAlvo, setTipoAlvo]   = useState(null);  // 'humanoide' | 'objeto'
+  const [alvoId, setAlvoId]       = useState(null);
+  const [objTam, setObjTam]       = useState('Médio');
+  const [objVeloc, setObjVeloc]   = useState('Normal');
+
+  const dificuldadeObj = OBJETO_DIFICULDADE[`${objTam}-${objVeloc}`] ?? 20;
+  const alvoHum = ALVOS_HUMANOIDE.find(a => a.id === alvoId);
+  const isCortante = damageTypes.includes('Cortante');
+
+  return (
+    <View style={s.miraBox}>
+      <Text style={s.subLabel}>Mira (opcional)</Text>
+
+      {/* Tipo de alvo */}
+      <View style={s.chipRow}>
+        {[['humanoide', '🧍 Humanoide'], ['objeto', '📦 Objeto']].map(([id, lbl]) => (
+          <TouchableOpacity
+            key={id}
+            style={[s.chip, tipoAlvo === id && s.chipActive]}
+            onPress={() => { setTipoAlvo(tipoAlvo === id ? null : id); setAlvoId(null); }}
+          >
+            <Text style={[s.chipText, tipoAlvo === id && s.chipTextActive]}>{lbl}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Humanoide: partes do corpo */}
+      {tipoAlvo === 'humanoide' && (
+        <>
+          <View style={s.chipRow}>
+            {ALVOS_HUMANOIDE.map(a => {
+              const bloqueado = a.cortanteOnly && !isCortante;
+              return (
+                <TouchableOpacity
+                  key={a.id}
+                  style={[s.chip, alvoId === a.id && s.chipActive, bloqueado && s.chipDisabled]}
+                  onPress={() => !bloqueado && setAlvoId(alvoId === a.id ? null : a.id)}
+                  disabled={bloqueado}
+                >
+                  <Text style={[s.chipText, alvoId === a.id && s.chipTextActive, bloqueado && s.chipTextDisabled]}>
+                    {a.label}
+                  </Text>
+                  <Text style={[s.chipSub, alvoId === a.id && s.chipSubActive, bloqueado && s.chipTextDisabled]}>
+                    {bloqueado ? 'requer Cortante' : `dif. ${a.dificuldade}`}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {alvoHum && (
+            <View style={s.miraResult}>
+              <View style={s.miraDifRow}>
+                <Text style={s.miraDifLabel}>Dificuldade do acerto</Text>
+                <Text style={s.miraDifVal}>{alvoHum.dificuldade}</Text>
+              </View>
+              {'efeitos' in alvoHum ? (
+                <>
+                  {alvoHum.efeitos.map(e => (
+                    <View key={e.hits} style={s.miraEfeitoRow}>
+                      <Text style={s.miraEfeitoHits}>{e.hits}×</Text>
+                      <Text style={s.miraEfeitoText}>{e.efeito}</Text>
+                    </View>
+                  ))}
+                  {alvoHum.nota && <Text style={s.miraNota}>{alvoHum.nota}</Text>}
+                </>
+              ) : (
+                <Text style={s.miraEfeitoSingle}>{alvoHum.efeito}</Text>
+              )}
+            </View>
+          )}
+        </>
+      )}
+
+      {/* Objeto: tamanho + velocidade */}
+      {tipoAlvo === 'objeto' && (
+        <>
+          <Text style={s.miraSubLabel}>Tamanho</Text>
+          <View style={s.chipRow}>
+            {ALVOS_OBJETO_TAMANHO.map(t => (
+              <TouchableOpacity key={t} style={[s.chip, objTam === t && s.chipActive]} onPress={() => setObjTam(t)}>
+                <Text style={[s.chipText, objTam === t && s.chipTextActive]}>{t}</Text>
+                <Text style={[s.chipSub, objTam === t && s.chipSubActive]}>{TAMANHO_VOLUME[t]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={s.miraSubLabel}>Velocidade</Text>
+          <View style={s.chipRow}>
+            {ALVOS_OBJETO_VELOC.map(v => (
+              <TouchableOpacity key={v} style={[s.chip, objVeloc === v && s.chipActive]} onPress={() => setObjVeloc(v)}>
+                <Text style={[s.chipText, objVeloc === v && s.chipTextActive]}>{v}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={s.miraResult}>
+            <View style={s.miraDifRow}>
+              <Text style={s.miraDifLabel}>Dificuldade do acerto</Text>
+              <Text style={s.miraDifVal}>{dificuldadeObj}</Text>
+            </View>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+
 const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
 const DEFAULT_DURACAO     = {
   1: '1 cena / 3 turnos',
@@ -366,6 +524,11 @@ function AttackPanel({ actionsLeft, onConfirm }) {
             );
           })}
         </>
+      )}
+
+      {/* Mira */}
+      {weapon && (
+        <MiraPanel damageTypes={getWeaponDamageTypes(weapon.tipo)} />
       )}
 
       {/* Efeitos aplicados */}
@@ -932,6 +1095,20 @@ const s = StyleSheet.create({
   energySummaryLabel:{ color: '#6c7086', fontSize: 12 },
   energySummaryVal:  { color: '#cdd6f4', fontSize: 13, fontWeight: '700', flex: 1 },
   energySummaryCur:  { color: '#45475a', fontSize: 11 },
+
+  miraBox:        { marginTop: 8 },
+  miraSubLabel:   { color: '#45475a', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, marginTop: 6 },
+  chipDisabled:       { opacity: 0.4 },
+  chipTextDisabled:   { color: '#45475a' },
+  miraResult:     { backgroundColor: '#181825', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#fab38740', marginTop: 4 },
+  miraDifRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  miraDifLabel:   { color: '#6c7086', fontSize: 12, flex: 1 },
+  miraDifVal:     { color: '#fab387', fontSize: 22, fontWeight: 'bold' },
+  miraEfeitoRow:  { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  miraEfeitoHits: { color: '#fab387', fontSize: 12, fontWeight: '700', minWidth: 24 },
+  miraEfeitoText: { color: '#cdd6f4', fontSize: 12, lineHeight: 17, flex: 1 },
+  miraEfeitoSingle: { color: '#cdd6f4', fontSize: 12, lineHeight: 18 },
+  miraNota:       { color: '#45475a', fontSize: 11, fontStyle: 'italic', marginTop: 6 },
 
   effectsBox:      { backgroundColor: '#1e1e2e', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#2e2e4e' },
   effectsBoxLabel: { color: '#6c7086', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 },
