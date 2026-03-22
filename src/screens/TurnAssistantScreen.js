@@ -46,14 +46,19 @@ function isMagicWeapon(tipoId) {
   return MAGIC_WEAPON_CATEGORIES.includes(trailById(tipoId)?.categoria ?? '');
 }
 
-// Retorna skills adquiridas da trilha da arma equipada
+// Retorna skills adquiridas da trilha da arma equipada com descrições por nível
 function getWeaponSkills(tipoId, acquiredTrails) {
   if (!tipoId || !acquiredTrails?.[tipoId]) return [];
   const trail = TRAILS_ARMAS.find(t => t.id === tipoId);
   if (!trail) return [];
   const trailData = acquiredTrails[tipoId];
   return trail.skills
-    .map(sk => ({ nome: sk.nome, level: trailData.skills?.[sk.id] ?? 0 }))
+    .map(sk => ({
+      id:     sk.id,
+      nome:   sk.nome,
+      level:  trailData.skills?.[sk.id] ?? 0,
+      niveis: sk.niveis ?? {},
+    }))
     .filter(sk => sk.level > 0);
 }
 
@@ -89,14 +94,15 @@ function getAcquiredMagicSpells(acquiredTrails) {
 function AttackPanel({ actionsLeft, onConfirm }) {
   const { character, dispatch } = useCharacter();
   const { attributes: attrs, skills } = character;
-  const forca    = attrs?.robustez?.forca     ?? 0;
-  const destreza = attrs?.robustez?.destreza  ?? 0;
-  const armasBrancas = skills?.armasBrancas   ?? 0;
-  const armasRange   = skills?.armasRange     ?? 0;
+  const forca        = attrs?.robustez?.forca    ?? 0;
+  const destreza     = attrs?.robustez?.destreza ?? 0;
+  const armasBrancas = skills?.armasBrancas      ?? 0;
+  const armasRange   = skills?.armasRange        ?? 0;
 
-  const [selSlot, setSelSlot]   = useState(null);
-  const [twoHand, setTwoHand]   = useState(false);
-  const [selSkills, setSelSkills] = useState([]);
+  const [selSlot,   setSelSlot]   = useState(null);
+  const [twoHand,   setTwoHand]   = useState(false);
+  // { [skillId]: selectedLevel }  — 0 = não usar
+  const [skillLevels, setSkillLevels] = useState({});
 
   const weapons = HAND_SLOTS
     .map(k => ({ key: k, label: EQUIP_LABELS[k], equip: character.equipment[k] }))
@@ -104,11 +110,10 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 
   const weapon = weapons.find(w => w.key === selSlot)?.equip ?? null;
   const nivel  = weapon?.nivel ?? 1;
-
   const ranged = weapon ? isRanged(weapon.tipo) : false;
   const magicW = weapon ? isMagicWeapon(weapon.tipo) : false;
 
-  // Fórmula de dano
+  // Fórmula de dano base
   let formula = null;
   if (weapon) {
     if (ranged) {
@@ -140,20 +145,25 @@ function AttackPanel({ actionsLeft, onConfirm }) {
     }
   }
 
-  const acquiredSkills = weapon ? getWeaponSkills(weapon.tipo, character.skillTree?.acquiredTrails) : [];
+  const acquiredSkills = weapon
+    ? getWeaponSkills(weapon.tipo, character.skillTree?.acquiredTrails)
+    : [];
 
-  function toggleSkill(nome) {
-    setSelSkills(prev =>
-      prev.includes(nome) ? prev.filter(s => s !== nome) : [...prev, nome]
-    );
+  // Energia total = 1 (ataque) + soma dos níveis selecionados de habilidades
+  const skillEnergyCost = Object.values(skillLevels).reduce((acc, lv) => acc + lv, 0);
+  const totalEnergy = 1 + skillEnergyCost;
+  const energiaAtual = character.status?.energia?.current ?? 0;
+  const podeAtacar = !!weapon && actionsLeft >= 1 && energiaAtual >= totalEnergy;
+
+  function setSkillLevel(skillId, lv) {
+    setSkillLevels(prev => ({ ...prev, [skillId]: lv }));
   }
 
   function confirm() {
-    if (!weapon || actionsLeft < 1) return;
-    // Desconta 1 energia
-    dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -1 });
+    if (!podeAtacar) return;
+    dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -totalEnergy });
     onConfirm();
-    setSelSkills([]);
+    setSkillLevels({});
   }
 
   return (
@@ -170,7 +180,7 @@ function AttackPanel({ actionsLeft, onConfirm }) {
               <TouchableOpacity
                 key={w.key}
                 style={[s.chip, selSlot === w.key && s.chipActive]}
-                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSelSkills([]); }}
+                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSkillLevels({}); }}
               >
                 <Text style={[s.chipText, selSlot === w.key && s.chipTextActive]}>
                   {w.equip.nome || w.label}
@@ -224,38 +234,73 @@ function AttackPanel({ actionsLeft, onConfirm }) {
       {acquiredSkills.length > 0 && (
         <>
           <Text style={s.subLabel}>Habilidades da Arma</Text>
-          <Text style={s.hint}>Selecione as que irá aplicar neste ataque</Text>
-          {acquiredSkills.map(sk => (
-            <TouchableOpacity
-              key={sk.nome}
-              style={[s.skillRow, selSkills.includes(sk.nome) && s.skillRowActive]}
-              onPress={() => toggleSkill(sk.nome)}
-            >
-              <View style={[s.skillCheck, selSkills.includes(sk.nome) && s.skillCheckActive]}>
-                {selSkills.includes(sk.nome) && <Text style={s.skillCheckMark}>✓</Text>}
+          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
+          {acquiredSkills.map(sk => {
+            const selLv = skillLevels[sk.id] ?? 0;
+            return (
+              <View key={sk.id} style={[s.skillCard, selLv > 0 && s.skillCardActive]}>
+                {/* Header: nome + seletor de nível */}
+                <View style={s.skillCardHeader}>
+                  <Text style={[s.skillName, selLv > 0 && s.skillNameActive]}>{sk.nome}</Text>
+                  <View style={s.lvlPicker}>
+                    {/* Botão "não usar" */}
+                    <TouchableOpacity
+                      style={[s.lvlBtn, selLv === 0 && s.lvlBtnOff]}
+                      onPress={() => setSkillLevel(sk.id, 0)}
+                    >
+                      <Text style={[s.lvlBtnText, selLv === 0 && s.lvlBtnTextOff]}>—</Text>
+                    </TouchableOpacity>
+                    {Array.from({ length: sk.level }, (_, i) => i + 1).map(lv => (
+                      <TouchableOpacity
+                        key={lv}
+                        style={[s.lvlBtn, selLv >= lv && s.lvlBtnActive]}
+                        onPress={() => setSkillLevel(sk.id, lv)}
+                      >
+                        <Text style={[s.lvlBtnText, selLv >= lv && s.lvlBtnTextActive]}>
+                          {lv}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    {selLv > 0 && (
+                      <Text style={s.lvlCost}>−{selLv}⚡</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* Descrição dos níveis selecionados */}
+                {selLv > 0 && Array.from({ length: selLv }, (_, i) => i + 1).map(lv => {
+                  const desc = sk.niveis[String(lv)];
+                  if (!desc) return null;
+                  return (
+                    <View key={lv} style={s.lvlDesc}>
+                      <Text style={s.lvlDescBadge}>Nv {lv}</Text>
+                      <Text style={s.lvlDescText}>{desc}</Text>
+                    </View>
+                  );
+                })}
               </View>
-              <Text style={[s.skillName, selSkills.includes(sk.nome) && s.skillNameActive]}>
-                {sk.nome}
-              </Text>
-              <Text style={s.skillLevel}>Nv {sk.level}</Text>
-            </TouchableOpacity>
-          ))}
+            );
+          })}
         </>
       )}
 
-      {selSkills.length > 0 && (
-        <View style={s.effectsNote}>
-          <Text style={s.effectsLabel}>Efeitos ativos:</Text>
-          <Text style={s.effectsList}>{selSkills.join(', ')}</Text>
+      {/* Resumo de energia */}
+      {weapon && (
+        <View style={[s.energySummary, !podeAtacar && energiaAtual < totalEnergy && s.energySummaryWarn]}>
+          <Text style={s.energySummaryLabel}>Custo total de Energia:</Text>
+          <Text style={s.energySummaryVal}>
+            1 ataque{skillEnergyCost > 0 ? ` + ${skillEnergyCost} habilidades` : ''} = {totalEnergy}⚡
+          </Text>
+          <Text style={s.energySummaryCur}>(você tem {energiaAtual})</Text>
         </View>
       )}
 
       <TouchableOpacity
-        style={[s.confirmBtn, (!weapon || actionsLeft < 1) && s.confirmBtnDisabled]}
+        style={[s.confirmBtn, !podeAtacar && s.confirmBtnDisabled]}
         onPress={confirm}
-        disabled={!weapon || actionsLeft < 1}
+        disabled={!podeAtacar}
       >
-        <Text style={s.confirmBtnText}>Confirmar Ataque  −1 Ação  −1 Energia</Text>
+        <Text style={s.confirmBtnText}>Confirmar Ataque  −1 Ação  −{totalEnergy} Energia</Text>
       </TouchableOpacity>
     </View>
   );
@@ -686,19 +731,31 @@ const s = StyleSheet.create({
   statLineLabel:{ color: '#6c7086', fontSize: 13 },
   statLineVal:  { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
 
-  // Habilidades de arma
-  skillRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#1e1e2e', borderRadius: 8, padding: 10, marginBottom: 4, borderWidth: 1, borderColor: '#2e2e4e' },
-  skillRowActive: { borderColor: '#a6e3a1', backgroundColor: '#1a2e1a' },
-  skillCheck:     { width: 20, height: 20, borderRadius: 4, borderWidth: 1.5, borderColor: '#45475a', alignItems: 'center', justifyContent: 'center' },
-  skillCheckActive: { backgroundColor: '#a6e3a1', borderColor: '#a6e3a1' },
-  skillCheckMark: { color: '#11111b', fontSize: 12, fontWeight: 'bold' },
-  skillName:      { color: '#6c7086', fontSize: 13, flex: 1 },
-  skillNameActive:{ color: '#a6e3a1' },
-  skillLevel:     { color: '#45475a', fontSize: 11 },
+  // Habilidades de arma (level picker)
+  skillCard:       { backgroundColor: '#1e1e2e', borderRadius: 10, padding: 10, marginBottom: 6, borderWidth: 1, borderColor: '#2e2e4e' },
+  skillCardActive: { borderColor: '#a6e3a1', backgroundColor: '#111f11' },
+  skillCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  skillName:       { color: '#6c7086', fontSize: 13, fontWeight: '600', flex: 1 },
+  skillNameActive: { color: '#a6e3a1' },
 
-  effectsNote:  { backgroundColor: '#1a2e1a', borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#a6e3a1' },
-  effectsLabel: { color: '#a6e3a1', fontSize: 11, fontWeight: '700', marginBottom: 2 },
-  effectsList:  { color: '#cdd6f4', fontSize: 12 },
+  lvlPicker:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  lvlBtn:       { width: 28, height: 28, borderRadius: 6, backgroundColor: '#313244', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#45475a' },
+  lvlBtnOff:    { backgroundColor: '#1e1e2e', borderColor: '#313244' },
+  lvlBtnActive: { backgroundColor: '#a6e3a1', borderColor: '#a6e3a1' },
+  lvlBtnText:       { color: '#6c7086', fontSize: 13, fontWeight: '700' },
+  lvlBtnTextOff:    { color: '#45475a' },
+  lvlBtnTextActive: { color: '#11111b' },
+  lvlCost:      { color: '#a6e3a1', fontSize: 12, fontWeight: '700', marginLeft: 4 },
+
+  lvlDesc:      { flexDirection: 'row', gap: 6, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#2e2e4e' },
+  lvlDescBadge: { color: '#a6e3a1', fontSize: 11, fontWeight: '700', minWidth: 28 },
+  lvlDescText:  { color: '#a6adc8', fontSize: 12, lineHeight: 17, flex: 1 },
+
+  energySummary:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1e1e2e', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#2e2e4e' },
+  energySummaryWarn: { borderColor: '#f38ba8' },
+  energySummaryLabel:{ color: '#6c7086', fontSize: 12 },
+  energySummaryVal:  { color: '#cdd6f4', fontSize: 13, fontWeight: '700', flex: 1 },
+  energySummaryCur:  { color: '#45475a', fontSize: 11 },
 
   // Magias
   spellCard:       { backgroundColor: '#1e1e2e', borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#2e2e4e', overflow: 'hidden' },
