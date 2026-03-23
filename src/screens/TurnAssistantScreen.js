@@ -221,6 +221,52 @@ const REACTION_TITLES = {
 const CAST_BONUS_TITLES  = ['aprendiz_de_conjurador', 'conjurador_tatico', 'seguidor_da_magia'];
 const MANA_REDUCE_TITLES = ['feiticeiro'];
 
+// Habilidades que adicionam stats ao BLOQUEIO
+// confronto Nv1 = vigor incondicional; Nv2 = robustez condicional (mostramos mas não somamos)
+// bloqueador Nv1 = briga condicional
+// fatiador Nv1 = armasBrancas (dano E bloqueio)
+const WEAPON_SKILL_BLOCK_MODS = {
+  fatiador:  { minLevel: 1, statKey: 'armasBrancas', statLabel: 'Armas Brancas',
+    multiplier: (selLv) => selLv >= 3 ? 2 : 1, unconditional: true },
+  confronto: { minLevel: 1, statKey: 'vigor',        statLabel: 'Vigor',
+    multiplier: () => 1, unconditional: true },
+};
+
+// Retorna as skills de bloqueio de TODAS as armas equipadas (escudos + outras)
+function getAllBlockSkills(equipment, acquiredTrails) {
+  const out = []; // [{ weaponNome, slotKey, skills }]
+  for (const slotKey of HAND_SLOTS) {
+    const eq = equipment[slotKey];
+    if (!eq?.tipo && !eq?.nome) continue;
+    const isShield = trailById(eq.tipo)?.categoria === 'ESCUDOS';
+    const wSkills = getWeaponSkills(eq.tipo, acquiredTrails);
+    // Para escudos: todas as skills são relevantes para bloqueio
+    // Para outras armas: só as que têm block mod
+    const relevant = isShield
+      ? wSkills
+      : wSkills.filter(sk => WEAPON_SKILL_BLOCK_MODS[sk.id]);
+    if (relevant.length > 0) {
+      out.push({ slotKey, weaponNome: eq.nome || eq.tipo || slotKey, isShield, skills: relevant });
+    }
+  }
+  return out;
+}
+
+function getBlockBonuses(blockWeapons, allLevels, characterSkills) {
+  const bonuses = [];
+  for (const { skills } of blockWeapons) {
+    for (const sk of skills) {
+      const mod = WEAPON_SKILL_BLOCK_MODS[sk.id];
+      if (!mod || !mod.unconditional) continue;
+      const selLv = allLevels[sk.id] ?? 0;
+      if (selLv < mod.minLevel) continue;
+      const val = (characterSkills[mod.statKey] ?? 0) * mod.multiplier(selLv);
+      bonuses.push({ label: mod.statLabel, val });
+    }
+  }
+  return bonuses;
+}
+
 // ─── Modificadores numéricos por habilidade de arma ───────────────────────────
 
 // Habilidades que adicionam uma perícia ao dano (e eventualmente ao acerto)
@@ -631,35 +677,72 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 }
 
 // ─── Painel de Defesa ─────────────────────────────────────────────────────────
+function SkillLevelPicker({ sk, selLv, onChange }) {
+  return (
+    <View style={[s.skillCard, selLv > 0 && s.skillCardActive]}>
+      <View style={s.skillCardHeader}>
+        <Text style={[s.skillName, selLv > 0 && s.skillNameActive]}>{sk.nome}</Text>
+        <View style={s.lvlPicker}>
+          <TouchableOpacity style={[s.lvlBtn, selLv === 0 && s.lvlBtnOff]} onPress={() => onChange(sk.id, 0)}>
+            <Text style={[s.lvlBtnText, selLv === 0 && s.lvlBtnTextOff]}>—</Text>
+          </TouchableOpacity>
+          {Array.from({ length: sk.level }, (_, i) => i + 1).map(lv => (
+            <TouchableOpacity key={lv} style={[s.lvlBtn, selLv >= lv && s.lvlBtnActive]} onPress={() => onChange(sk.id, lv)}>
+              <Text style={[s.lvlBtnText, selLv >= lv && s.lvlBtnTextActive]}>{lv}</Text>
+            </TouchableOpacity>
+          ))}
+          {selLv > 0 && <Text style={s.lvlCost}>−{selLv}⚡</Text>}
+        </View>
+      </View>
+      {selLv > 0 && Array.from({ length: selLv }, (_, i) => i + 1).map(lv => {
+        const desc = sk.niveis[String(lv)];
+        return desc ? (
+          <View key={lv} style={s.lvlDesc}>
+            <Text style={s.lvlDescBadge}>Nv {lv}</Text>
+            <Text style={s.lvlDescText}>{desc}</Text>
+          </View>
+        ) : null;
+      })}
+    </View>
+  );
+}
+
 function DefendPanel({ actionsLeft, onConfirm }) {
   const { character, dispatch } = useCharacter();
   const { skills } = character;
   const reflexo  = skills?.reflexo  ?? 0;
   const esportes = skills?.esportes ?? 0;
-  const [mode, setMode]           = useState('bloquear');
-  const [shieldSkillLevels, setShieldSkillLevels] = useState({});
+  const [mode, setMode]       = useState('bloquear');
+  const [blockLevels, setBlockLevels] = useState({}); // { skillId: level }
 
   const { totalArmadura } = computeDefenseTotals(character.equipment, character.accessories);
 
-  // Detecta escudo equipado numa das mãos
-  const shieldSlot = HAND_SLOTS.map(k => character.equipment[k]).find(
-    eq => trailById(eq?.tipo)?.categoria === 'ESCUDOS'
-  ) ?? null;
-  const shieldSkills = shieldSlot
-    ? getWeaponSkills(shieldSlot.tipo, character.skillTree?.acquiredTrails)
-    : [];
-  const shieldSkillCost = Object.values(shieldSkillLevels).reduce((a, v) => a + v, 0);
-  const shieldEffects = extractEffectsWithQty(shieldSkills, shieldSkillLevels);
+  // Todas as armas com habilidades relevantes para bloqueio
+  const blockWeapons = getAllBlockSkills(character.equipment, character.skillTree?.acquiredTrails);
 
-  const energiaAtual = character.status?.energia?.current ?? 0;
-  const energyCost = mode === 'esquivar' ? 1 + shieldSkillCost : shieldSkillCost;
-  const podeDefender = actionsLeft >= 1 && energiaAtual >= energyCost;
+  // Bônus numéricos incondicionais ao bloqueio
+  const blockBonuses  = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
+  const blockBonusTotal = blockBonuses.reduce((a, b) => a + b.val, 0);
+  const blockTotal    = totalArmadura + blockBonusTotal;
+
+  // Efeitos especiais
+  const allBlockSkills = blockWeapons.flatMap(w => w.skills);
+  const blockEffects   = extractEffectsWithQty(allBlockSkills, blockLevels);
+
+  const blockSkillCost = Object.values(blockLevels).reduce((a, v) => a + v, 0);
+  const energiaAtual   = character.status?.energia?.current ?? 0;
+  const energyCost     = mode === 'esquivar' ? 1 : blockSkillCost;
+  const podeDefender   = actionsLeft >= 1 && energiaAtual >= energyCost;
+
+  function setLevel(skillId, lv) {
+    setBlockLevels(prev => ({ ...prev, [skillId]: lv }));
+  }
 
   function confirm() {
     if (!podeDefender) return;
     if (energyCost > 0) dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -energyCost });
     onConfirm();
-    setShieldSkillLevels({});
+    setBlockLevels({});
   }
 
   return (
@@ -676,11 +759,31 @@ function DefendPanel({ actionsLeft, onConfirm }) {
       {mode === 'bloquear' ? (
         <View style={s.formulaCard}>
           <Text style={s.formulaTitle}>🛡️ Bloqueio</Text>
-          <View style={s.statLine}>
-            <Text style={s.statLineLabel}>Armadura Total</Text>
-            <Text style={s.statLineVal}>{totalArmadura}</Text>
+          <View style={s.formulaParts}>
+            <View style={s.formulaPart}>
+              <Text style={s.formulaVal}>{totalArmadura}</Text>
+              <Text style={s.formulaLbl}>Armadura</Text>
+            </View>
+            {blockBonuses.map(b => (
+              <React.Fragment key={b.label}>
+                <Text style={s.formulaOp}>+</Text>
+                <View style={s.formulaPart}>
+                  <Text style={s.formulaVal}>{b.val}</Text>
+                  <Text style={s.formulaLbl}>{b.label}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+            {blockBonuses.length > 0 && (
+              <>
+                <Text style={s.formulaOp}>=</Text>
+                <View style={[s.formulaPart, s.formulaTotal]}>
+                  <Text style={s.formulaTotalVal}>{blockTotal}</Text>
+                  <Text style={s.formulaLbl}>Total</Text>
+                </View>
+              </>
+            )}
           </View>
-          <Text style={s.formulaNote}>Reduz dano recebido pelo valor de armadura</Text>
+          <Text style={s.formulaNote}>Reduz dano recebido pelo valor de bloqueio</Text>
         </View>
       ) : (
         <View style={s.formulaCard}>
@@ -705,50 +808,35 @@ function DefendPanel({ actionsLeft, onConfirm }) {
         </View>
       )}
 
-      {/* Habilidades do escudo (se equipado) */}
-      {mode === 'bloquear' && shieldSkills.length > 0 && (
+      {/* Habilidades de bloqueio de todas as armas */}
+      {mode === 'bloquear' && blockWeapons.length > 0 && (
         <>
-          <Text style={s.subLabel}>Habilidades do Escudo</Text>
-          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
-          {shieldSkills.map(sk => {
-            const selLv = shieldSkillLevels[sk.id] ?? 0;
-            return (
-              <View key={sk.id} style={[s.skillCard, selLv > 0 && s.skillCardActive]}>
-                <View style={s.skillCardHeader}>
-                  <Text style={[s.skillName, selLv > 0 && s.skillNameActive]}>{sk.nome}</Text>
-                  <View style={s.lvlPicker}>
-                    <TouchableOpacity style={[s.lvlBtn, selLv === 0 && s.lvlBtnOff]} onPress={() => setShieldSkillLevels(p => ({ ...p, [sk.id]: 0 }))}>
-                      <Text style={[s.lvlBtnText, selLv === 0 && s.lvlBtnTextOff]}>—</Text>
-                    </TouchableOpacity>
-                    {Array.from({ length: sk.level }, (_, i) => i + 1).map(lv => (
-                      <TouchableOpacity key={lv} style={[s.lvlBtn, selLv >= lv && s.lvlBtnActive]} onPress={() => setShieldSkillLevels(p => ({ ...p, [sk.id]: lv }))}>
-                        <Text style={[s.lvlBtnText, selLv >= lv && s.lvlBtnTextActive]}>{lv}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    {selLv > 0 && <Text style={s.lvlCost}>−{selLv}⚡</Text>}
-                  </View>
-                </View>
-                {selLv > 0 && Array.from({ length: selLv }, (_, i) => i + 1).map(lv => {
-                  const desc = sk.niveis[String(lv)];
-                  return desc ? (
-                    <View key={lv} style={s.lvlDesc}>
-                      <Text style={s.lvlDescBadge}>Nv {lv}</Text>
-                      <Text style={s.lvlDescText}>{desc}</Text>
-                    </View>
-                  ) : null;
-                })}
-              </View>
-            );
-          })}
+          <Text style={s.subLabel}>Habilidades de Bloqueio</Text>
+          <Text style={s.hint}>Escolha o nível — cada nível custa 1 Energia</Text>
+          {blockWeapons.map(w => (
+            <View key={w.slotKey}>
+              <Text style={s.weaponGroupLabel}>
+                {w.isShield ? '🛡' : '⚔️'} {w.weaponNome}
+              </Text>
+              {w.skills.map(sk => (
+                <SkillLevelPicker
+                  key={sk.id}
+                  sk={sk}
+                  selLv={blockLevels[sk.id] ?? 0}
+                  onChange={setLevel}
+                />
+              ))}
+            </View>
+          ))}
         </>
       )}
 
-      {/* Efeitos do bloqueio */}
-      {mode === 'bloquear' && shieldEffects.length > 0 && (
+      {/* Efeitos especiais do bloqueio */}
+      {mode === 'bloquear' && blockEffects.length > 0 && (
         <View style={s.effectsBox}>
           <Text style={s.effectsBoxLabel}>Efeitos do bloqueio:</Text>
           <View style={s.effectsTags}>
-            {shieldEffects.map(({ label, qty }) => (
+            {blockEffects.map(({ label, qty }) => (
               <View key={label} style={[s.effectTag, s.effectTagSkill]}>
                 <Text style={s.effectTagTextSkill}>{label} +{qty}</Text>
               </View>
@@ -764,8 +852,8 @@ function DefendPanel({ actionsLeft, onConfirm }) {
       >
         <Text style={s.confirmBtnText}>
           {mode === 'esquivar'
-            ? `Confirmar Esquiva  −1 Ação${energyCost > 1 ? `  −${energyCost} Energia` : '  −1 Energia'}`
-            : `Confirmar Bloqueio  −1 Ação${shieldSkillCost > 0 ? `  −${shieldSkillCost} Energia` : ''}`}
+            ? 'Confirmar Esquiva  −1 Ação  −1 Energia'
+            : `Confirmar Bloqueio  −1 Ação${blockSkillCost > 0 ? `  −${blockSkillCost} Energia` : ''}`}
         </Text>
       </TouchableOpacity>
     </View>
