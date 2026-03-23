@@ -26,6 +26,29 @@ function clamp(value, min = 0, max = Infinity) {
   return Math.max(min, Math.min(max, value));
 }
 
+// Computa bônus numéricos de status dos efeitos narrativos
+function computeNarrativeBonuses(narrativeEffects = []) {
+  const result = {};
+  for (const ef of narrativeEffects) {
+    for (const linha of ef.linhas ?? []) {
+      if (linha.tipo === 'status' && linha.statusKey && linha.delta) {
+        result[linha.statusKey] = (result[linha.statusKey] || 0) + linha.delta;
+      }
+    }
+  }
+  return result;
+}
+
+// Mescla bônus de títulos com bônus narrativos
+function totalStatusBonuses(titleBonuses = {}, narrativeEffects = []) {
+  const narrative = computeNarrativeBonuses(narrativeEffects);
+  const merged = { ...titleBonuses };
+  for (const [k, v] of Object.entries(narrative)) {
+    merged[k] = (merged[k] || 0) + v;
+  }
+  return merged;
+}
+
 // Recalcula os tetos de status e clipa os valores atuais
 // statusBonuses: bônus fixos de títulos adquiridos, ex: { vida: 10 }
 function applyComputedMaxes(status, attrs, statusBonuses = {}) {
@@ -45,7 +68,10 @@ function reducer(state, action) {
     case 'LOAD': {
       const p = action.payload;
       if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
-      const status = applyComputedMaxes(p.status, p.attributes, p.titles?.statusBonuses ?? {});
+      const status = applyComputedMaxes(
+        p.status, p.attributes,
+        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [])
+      );
       // Mescla settings: preserva customizações salvas, garante campos novos
       const savedSettings = p.settings ?? {};
       const settings = {
@@ -58,11 +84,12 @@ function reducer(state, action) {
         ...INITIAL_CHARACTER,
         ...p,
         status,
-        equipment:   p.equipment   ?? INITIAL_CHARACTER.equipment,
-        accessories: p.accessories ?? INITIAL_CHARACTER.accessories,
-        skillTree:   p.skillTree   ?? INITIAL_CHARACTER.skillTree,
-        titles:      p.titles      ?? INITIAL_CHARACTER.titles,
-        inventory:   p.inventory   ?? INITIAL_CHARACTER.inventory,
+        equipment:        p.equipment        ?? INITIAL_CHARACTER.equipment,
+        accessories:      p.accessories      ?? INITIAL_CHARACTER.accessories,
+        skillTree:        p.skillTree        ?? INITIAL_CHARACTER.skillTree,
+        titles:           p.titles           ?? INITIAL_CHARACTER.titles,
+        inventory:        p.inventory        ?? INITIAL_CHARACTER.inventory,
+        narrativeEffects: p.narrativeEffects ?? INITIAL_CHARACTER.narrativeEffects,
         settings,
       };
     }
@@ -106,7 +133,10 @@ function reducer(state, action) {
         ...state.attributes,
         [action.group]: { ...group, [action.subAttr]: newVal },
       };
-      const newStatus = applyComputedMaxes(state.status, newAttrs, state.titles?.statusBonuses ?? {});
+      const newStatus = applyComputedMaxes(
+        state.status, newAttrs,
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [])
+      );
 
       if (newVal > curVal) {
         const xpCost  = state.settings.xpCosts[action.group] ?? 10;
@@ -194,6 +224,51 @@ function reducer(state, action) {
         [action.field]: action.value,
       };
       return { ...state, accessories };
+    }
+
+    // { index, tira }  — adiciona tira a um acessório
+    case 'ADD_ACC_TIRA': {
+      const accessories = [...state.accessories];
+      const acc = accessories[action.index];
+      accessories[action.index] = { ...acc, tiras: [...(acc.tiras ?? []), action.tira] };
+      return { ...state, accessories };
+    }
+
+    // { index, tiraIndex }  — remove tira de um acessório
+    case 'REMOVE_ACC_TIRA': {
+      const accessories = [...state.accessories];
+      const acc = accessories[action.index];
+      accessories[action.index] = { ...acc, tiras: (acc.tiras ?? []).filter((_, i) => i !== action.tiraIndex) };
+      return { ...state, accessories };
+    }
+
+    // ── Efeitos Narrativos ───────────────────────────────────────────────────
+
+    // { effect: { nome, linhas: [{tipo:'status',statusKey,delta}|{tipo:'texto',texto}] } }
+    case 'ADD_NARRATIVE_EFFECT': {
+      const newEffects = [...(state.narrativeEffects ?? []), action.effect];
+      let newStatus = applyComputedMaxes(
+        state.status, state.attributes,
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects)
+      );
+      // Aumenta current para bônus positivos de status
+      for (const linha of action.effect.linhas ?? []) {
+        if (linha.tipo === 'status' && linha.delta > 0 && COMPUTED_STATUS_KEYS.includes(linha.statusKey)) {
+          const s = newStatus[linha.statusKey];
+          newStatus = { ...newStatus, [linha.statusKey]: { ...s, current: Math.min(s.current + linha.delta, s.max) } };
+        }
+      }
+      return { ...state, narrativeEffects: newEffects, status: newStatus };
+    }
+
+    // { index }
+    case 'REMOVE_NARRATIVE_EFFECT': {
+      const newEffects = (state.narrativeEffects ?? []).filter((_, i) => i !== action.index);
+      const newStatus = applyComputedMaxes(
+        state.status, state.attributes,
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects)
+      );
+      return { ...state, narrativeEffects: newEffects, status: newStatus };
     }
 
     // { key: 'vida'|'energia'|..., direction: 'up'|'down' }
@@ -342,7 +417,10 @@ function reducer(state, action) {
         newBonuses[ef.status] = (newBonuses[ef.status] || 0) + ef.delta;
       }
 
-      let newStatus = applyComputedMaxes(state.status, state.attributes, newBonuses);
+      let newStatus = applyComputedMaxes(
+        state.status, state.attributes,
+        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [])
+      );
       // Aumenta o current proporcional ao bônus positivo
       for (const ef of title.efeitos ?? []) {
         if (ef.delta > 0 && COMPUTED_STATUS_KEYS.includes(ef.status)) {

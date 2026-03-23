@@ -26,7 +26,7 @@ const emptyArmorSlot = () => ({
   durabilidade: 10, durabilidadeMax: 10, nivel: 1, tiras: [],
 });
 const emptyHandSlot = () => ({ tipo: '', nome: '', dano: '', efeitos: '', nivel: 1, tiras: [] });
-const emptyAccessory = () => ({ nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '' });
+const emptyAccessory = () => ({ nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '', tiras: [] });
 
 // ─── Personagem inicial ───────────────────────────────────────────────────────
 export const INITIAL_CHARACTER = {
@@ -79,6 +79,9 @@ export const INITIAL_CHARACTER = {
   },
 
   accessories: Array.from({ length: 10 }, emptyAccessory),
+
+  narrativeEffects: [],
+  // [{ nome: string, linhas: [{ tipo: 'status', statusKey, delta } | { tipo: 'texto', texto }] }]
 
   skillTree: {
     trailCount: 0,

@@ -34,22 +34,41 @@ function tiraLabel(t) {
 }
 
 // ─── Modal de Tiras de Couro ──────────────────────────────────────────────────
-function TirasModal({ visible, slotKey, tiras, onClose }) {
+// slotKey: chave do slot de equipamento (se for equipamento)
+// accIndex: índice do acessório (se for acessório)
+function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
   const { dispatch } = useCharacter();
   const [tab, setTab]         = useState('atributo'); // atributo | pericia | narrativa
   const [selKey, setSelKey]   = useState('');
   const [valor, setValor]     = useState('1');
   const [texto, setTexto]     = useState('');
 
+  const isAcc = accIndex !== undefined;
+
   function addTira() {
+    let tira = null;
     if (tab === 'atributo' && selKey) {
-      dispatch({ type: 'ADD_EQUIP_TIRA', slot: slotKey, tira: { tipo: 'atributo', subAttr: selKey, valor: parseInt(valor) || 1 } });
+      tira = { tipo: 'atributo', subAttr: selKey, valor: parseInt(valor) || 1 };
     } else if (tab === 'pericia' && selKey) {
-      dispatch({ type: 'ADD_EQUIP_TIRA', slot: slotKey, tira: { tipo: 'pericia', skill: selKey, valor: parseInt(valor) || 1 } });
+      tira = { tipo: 'pericia', skill: selKey, valor: parseInt(valor) || 1 };
     } else if (tab === 'narrativa' && texto.trim()) {
-      dispatch({ type: 'ADD_EQUIP_TIRA', slot: slotKey, tira: { tipo: 'narrativa', texto: texto.trim() } });
+      tira = { tipo: 'narrativa', texto: texto.trim() };
+    }
+    if (!tira) return;
+    if (isAcc) {
+      dispatch({ type: 'ADD_ACC_TIRA', index: accIndex, tira });
+    } else {
+      dispatch({ type: 'ADD_EQUIP_TIRA', slot: slotKey, tira });
     }
     setSelKey(''); setValor('1'); setTexto('');
+  }
+
+  function removeTira(i) {
+    if (isAcc) {
+      dispatch({ type: 'REMOVE_ACC_TIRA', index: accIndex, tiraIndex: i });
+    } else {
+      dispatch({ type: 'REMOVE_EQUIP_TIRA', slot: slotKey, index: i });
+    }
   }
 
   const keys = tab === 'atributo' ? ATTR_SUB_KEYS : SKILL_KEYS;
@@ -72,7 +91,7 @@ function TirasModal({ visible, slotKey, tiras, onClose }) {
                   <Text style={ms.tiraLabel}>{tiraLabel(t)}</Text>
                   <TouchableOpacity
                     style={ms.removeBtn}
-                    onPress={() => dispatch({ type: 'REMOVE_EQUIP_TIRA', slot: slotKey, index: i })}
+                    onPress={() => removeTira(i)}
                   >
                     <Text style={ms.removeBtnText}>✕</Text>
                   </TouchableOpacity>
@@ -472,11 +491,24 @@ function AccessoryCard({ index }) {
   const { character, dispatch } = useCharacter();
   const acc = character.accessories[index];
   const [expanded, setExpanded] = useState(false);
+  const [showTiras, setShowTiras] = useState(false);
 
   const setField = (field, value) =>
     dispatch({ type: 'SET_ACCESSORY', index, field, value });
 
-  const hasData = acc.nome || acc.armadura || acc.resMagica || acc.reputacao || acc.efeitos;
+  const tiras = acc.tiras ?? [];
+  const hasData = acc.nome || acc.armadura || acc.resMagica || acc.reputacao || acc.efeitos || tiras.length > 0;
+
+  if (showTiras) {
+    return (
+      <TirasModal
+        visible={true}
+        accIndex={index}
+        tiras={tiras}
+        onClose={() => setShowTiras(false)}
+      />
+    );
+  }
 
   return (
     <View style={styles.accCard}>
@@ -485,9 +517,10 @@ function AccessoryCard({ index }) {
         <Text style={styles.accName} numberOfLines={1}>{acc.nome || 'Acessório vazio'}</Text>
         {hasData && (
           <View style={styles.accBadgeRow}>
-            {acc.armadura > 0        && <Text style={styles.accBadge}>🛡 {acc.armadura}</Text>}
-            {acc.resMagica > 0       && <Text style={styles.accBadge}>✨ {acc.resMagica}</Text>}
+            {acc.armadura > 0         && <Text style={styles.accBadge}>🛡 {acc.armadura}</Text>}
+            {acc.resMagica > 0        && <Text style={styles.accBadge}>✨ {acc.resMagica}</Text>}
             {(acc.reputacao || 0) > 0 && <Text style={styles.accBadge}>🎭 {acc.reputacao}</Text>}
+            {tiras.length > 0         && <Text style={styles.accBadge}>🪢 {tiras.length}</Text>}
           </View>
         )}
         <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
@@ -515,6 +548,22 @@ function AccessoryCard({ index }) {
             placeholderTextColor="#45475a"
             multiline
           />
+          {/* Tiras de couro */}
+          <TouchableOpacity style={styles.tirasBtn} onPress={() => setShowTiras(true)}>
+            <Text style={styles.tirasBtnText}>🪢 Outros Bônus (Tiras)</Text>
+            {tiras.length > 0 && (
+              <View style={styles.tirasBadge}>
+                <Text style={styles.tirasBadgeText}>{tiras.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          {tiras.length > 0 && (
+            <View style={styles.tirasPreview}>
+              {tiras.map((t, i) => (
+                <Text key={i} style={styles.tirasPreviewItem}>• {tiraLabel(t)}</Text>
+              ))}
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -661,6 +710,13 @@ const styles = StyleSheet.create({
   accBadge:    { color: '#89b4fa', fontSize: 12 },
   chevron:     { color: '#45475a', fontSize: 11 },
   accBody:     { paddingHorizontal: 12, paddingBottom: 10 },
+
+  tirasBtn:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#181825', borderRadius: 8, borderWidth: 1, borderColor: '#cba6f7', padding: 10, marginTop: 6, gap: 8 },
+  tirasBtnText:     { color: '#cba6f7', fontSize: 13, fontWeight: '600', flex: 1 },
+  tirasBadge:       { backgroundColor: '#cba6f7', borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  tirasBadgeText:   { color: '#11111b', fontSize: 10, fontWeight: '700' },
+  tirasPreview:     { marginTop: 4 },
+  tirasPreviewItem: { color: '#cba6f7', fontSize: 12, marginBottom: 2 },
 });
 
 // ─── Estilos do modal ─────────────────────────────────────────────────────────
