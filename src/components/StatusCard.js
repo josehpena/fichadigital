@@ -1,10 +1,81 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
-import { STATUS_COLORS, STATUS_LABELS, COMPUTED_STATUS_KEYS, NO_MAX_STATUS_KEYS } from '../data/initialCharacter';
+import {
+  STATUS_COLORS, STATUS_LABELS, COMPUTED_STATUS_KEYS, NO_MAX_STATUS_KEYS,
+  ATTRIBUTE_LABELS, ARMOR_SLOTS, HAND_SLOTS,
+} from '../data/initialCharacter';
+import { TITLE_BY_ID } from '../data/titlesData';
 
 const QUICK_DELTAS = [-5, -1, +1, +5];
 const COUNTER_TIMEOUT = 5000;
+
+// Quais sub-atributos contribuem para cada status calculado
+const STATUS_FORMULA = {
+  vida:           [['robustez', 'forca'], ['robustez', 'destreza'], ['robustez', 'vigor']],
+  energia:        [['robustez', 'vigor'], ['concentracao', 'percepcao']],
+  mana:           [['concentracao', 'inteligencia'], ['reputacao', 'etiqueta']],
+  forcaDeVontade: [['robustez', 'forca'], ['reputacao', 'carisma']],
+};
+
+const STATUS_BASE = { vida: 10 };
+
+// Sub-atributos relevantes por status (para filtrar tiras)
+const STATUS_ATTR_DEPS = {
+  vida:           ['forca', 'destreza', 'vigor'],
+  energia:        ['vigor', 'percepcao'],
+  mana:           ['inteligencia', 'etiqueta'],
+  forcaDeVontade: ['forca', 'carisma'],
+};
+
+function getStatusBreakdown(statusKey, character) {
+  const parts = [];
+
+  // ── Fórmula de atributos ─────────────────────────────────────────────────
+  const formula = STATUS_FORMULA[statusKey];
+  if (formula) {
+    for (const [grupo, sub] of formula) {
+      const val = character.attributes[grupo]?.[sub] ?? 0;
+      parts.push({ label: ATTRIBUTE_LABELS[sub] ?? sub, val, source: 'atributo' });
+    }
+    const base = STATUS_BASE[statusKey];
+    if (base) parts.push({ label: 'Base', val: base, source: 'base' });
+  }
+
+  // ── Bônus de títulos ─────────────────────────────────────────────────────
+  for (const titleId of (character.titles?.acquired ?? [])) {
+    const title = TITLE_BY_ID?.[titleId];
+    if (!title) continue;
+    for (const ef of (title.efeitos ?? [])) {
+      if (ef.status === statusKey && ef.delta !== 0) {
+        parts.push({ label: title.nome, val: ef.delta, source: 'titulo' });
+      }
+    }
+  }
+
+  // ── Tiras de couro (atributo) em itens equipados ──────────────────────────
+  const deps = STATUS_ATTR_DEPS[statusKey] ?? [];
+  if (deps.length > 0) {
+    const allSlots = [...ARMOR_SLOTS, ...HAND_SLOTS];
+    for (const slotKey of allSlots) {
+      const slot = character.equipment?.[slotKey];
+      if (!slot) continue;
+      const tiras = slot.tiras ?? [];
+      for (const t of tiras) {
+        if (t.tipo === 'atributo' && deps.includes(t.subAttr) && t.valor) {
+          const itemName = slot.nome || slotKey;
+          parts.push({
+            label: `${itemName} (${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr})`,
+            val: t.valor,
+            source: 'tira',
+          });
+        }
+      }
+    }
+  }
+
+  return parts;
+}
 
 export default function StatusCard({ statusKey }) {
   const { character, dispatch } = useCharacter();
@@ -16,17 +87,14 @@ export default function StatusCard({ statusKey }) {
   const noMax      = NO_MAX_STATUS_KEYS.includes(statusKey);
 
   const [deltaAcc, setDeltaAcc] = useState(0);
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const timerRef = useRef(null);
 
   const change = useCallback((delta) => {
     dispatch({ type: 'CHANGE_STATUS', statusKey, field: 'current', delta });
-
     setDeltaAcc((prev) => prev + delta);
-
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      setDeltaAcc(0);
-    }, COUNTER_TIMEOUT);
+    timerRef.current = setTimeout(() => setDeltaAcc(0), COUNTER_TIMEOUT);
   }, [dispatch, statusKey]);
 
   const changeMax = (delta) => dispatch({ type: 'CHANGE_STATUS', statusKey, field: 'max', delta });
@@ -34,6 +102,9 @@ export default function StatusCard({ statusKey }) {
   const showCounter = deltaAcc !== 0;
   const counterColor = deltaAcc > 0 ? '#a6e3a1' : '#f38ba8';
   const counterText  = deltaAcc > 0 ? `+${deltaAcc}` : `${deltaAcc}`;
+
+  const breakdown = getStatusBreakdown(statusKey, character);
+  const hasBreakdown = breakdown.length > 0;
 
   return (
     <View style={styles.card}>
@@ -44,13 +115,27 @@ export default function StatusCard({ statusKey }) {
         {!noMax && (
           <View style={styles.maxRow}>
             {isComputed ? (
-              <Text style={styles.computedMaxLabel}>/ {s.max} auto</Text>
+              <TouchableOpacity
+                onPress={() => setShowBreakdown(v => !v)}
+                style={styles.computedMaxBtn}
+              >
+                <Text style={styles.computedMaxLabel}>
+                  / {s.max} {showBreakdown ? '▲' : '▼'}
+                </Text>
+              </TouchableOpacity>
             ) : (
               <>
                 <TouchableOpacity onPress={() => changeMax(-1)} style={styles.maxBtn}>
                   <Text style={styles.maxBtnText}>−</Text>
                 </TouchableOpacity>
-                <Text style={styles.maxText}>/ {s.max}</Text>
+                <TouchableOpacity
+                  onPress={() => hasBreakdown && setShowBreakdown(v => !v)}
+                  disabled={!hasBreakdown}
+                >
+                  <Text style={styles.maxText}>
+                    / {s.max}{hasBreakdown ? (showBreakdown ? ' ▲' : ' ▼') : ''}
+                  </Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => changeMax(+1)} style={styles.maxBtn}>
                   <Text style={styles.maxBtnText}>+</Text>
                 </TouchableOpacity>
@@ -58,7 +143,39 @@ export default function StatusCard({ statusKey }) {
             )}
           </View>
         )}
+
+        {noMax && hasBreakdown && (
+          <TouchableOpacity onPress={() => setShowBreakdown(v => !v)} style={styles.infoBtn}>
+            <Text style={styles.infoBtnText}>{showBreakdown ? '▲' : 'ℹ'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* Breakdown expandível */}
+      {showBreakdown && hasBreakdown && (
+        <View style={styles.breakdown}>
+          {breakdown.map((p, i) => {
+            const isLast = i === breakdown.length - 1;
+            const sourceColor =
+              p.source === 'titulo' ? '#f9e2af' :
+              p.source === 'tira'   ? '#94e2d5' :
+              p.source === 'base'   ? '#6c7086' :
+              '#a6adc8';
+            return (
+              <View key={i} style={[styles.breakdownRow, isLast && styles.breakdownRowLast]}>
+                <Text style={[styles.breakdownLabel, { color: sourceColor }]}>{p.label}</Text>
+                <Text style={[styles.breakdownVal, { color: sourceColor }]}>
+                  {p.val > 0 ? `+${p.val}` : p.val}
+                </Text>
+              </View>
+            );
+          })}
+          <View style={styles.breakdownTotal}>
+            <Text style={styles.breakdownTotalLabel}>Total máx</Text>
+            <Text style={[styles.breakdownTotalVal, { color }]}>{s.max}</Text>
+          </View>
+        </View>
+      )}
 
       {!noMax && (
         <View style={styles.barBg}>
@@ -107,7 +224,41 @@ const styles = StyleSheet.create({
   },
   maxBtnText:       { color: '#cdd6f4', fontSize: 14, lineHeight: 18 },
   maxText:          { color: '#6c7086', fontSize: 13, marginHorizontal: 4 },
+  computedMaxBtn:   { paddingHorizontal: 4 },
   computedMaxLabel: { color: '#45475a', fontSize: 12, fontStyle: 'italic' },
+  infoBtn:          { paddingHorizontal: 6, paddingVertical: 2 },
+  infoBtnText:      { color: '#45475a', fontSize: 13 },
+
+  // Breakdown
+  breakdown: {
+    backgroundColor: '#181825',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#313244',
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2e2e4e',
+  },
+  breakdownRowLast: { borderBottomWidth: 0 },
+  breakdownLabel:   { fontSize: 12, flex: 1 },
+  breakdownVal:     { fontSize: 12, fontWeight: '700' },
+  breakdownTotal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#45475a',
+  },
+  breakdownTotalLabel: { color: '#6c7086', fontSize: 12, fontStyle: 'italic' },
+  breakdownTotalVal:   { fontSize: 12, fontWeight: '800' },
+
   barBg: {
     height: 6, backgroundColor: '#313244', borderRadius: 3,
     overflow: 'hidden', marginBottom: 6,
