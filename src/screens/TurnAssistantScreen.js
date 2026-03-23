@@ -36,35 +36,12 @@ const DAMAGE_TYPE_COLORS = {
 };
 
 // Palavras-chave de efeitos nos textos das habilidades
-const EFFECT_KEYWORDS = [
-  { re: /pressão/i,              label: 'Pressão' },
-  { re: /sangramento/i,          label: 'Sangramento' },
-  { re: /envenenado|veneno/i,    label: 'Veneno' },
-  { re: /perfura|penetra/i,      label: 'Penetração' },
-  { re: /engajado/i,             label: 'Engajado' },
-  { re: /desmaio|desmaia/i,      label: 'Desmaio' },
-  { re: /empurr|deslocamento/i,  label: 'Deslocamento' },
-];
 
 function getWeaponDamageTypes(tipoId) {
   const trail = trailById(tipoId);
   return WEAPON_DAMAGE_TYPES[trail?.categoria ?? ''] ?? [];
 }
 
-// Extrai efeitos mencionados nos textos das habilidades selecionadas
-function extractEffects(skills, skillLevels) {
-  const found = new Set();
-  for (const sk of skills) {
-    const selLv = skillLevels[sk.id] ?? 0;
-    for (let lv = 1; lv <= selLv; lv++) {
-      const desc = sk.niveis[String(lv)] ?? '';
-      for (const kw of EFFECT_KEYWORDS) {
-        if (kw.re.test(desc)) found.add(kw.label);
-      }
-    }
-  }
-  return [...found];
-}
 
 // ─── Dados de Mira ────────────────────────────────────────────────────────────
 
@@ -244,6 +221,69 @@ const REACTION_TITLES = {
 const CAST_BONUS_TITLES  = ['aprendiz_de_conjurador', 'conjurador_tatico', 'seguidor_da_magia'];
 const MANA_REDUCE_TITLES = ['feiticeiro'];
 
+// ─── Modificadores numéricos por habilidade de arma ───────────────────────────
+
+// Habilidades que adicionam uma perícia ao dano (e eventualmente ao acerto)
+// minLevel = nível mínimo selecionado para o bônus entrar
+// tripleInTwoHand = true para respeitar a regra "perícia×3 em 2 mãos"
+const WEAPON_SKILL_DAMAGE_MODS = {
+  // fatiador (machado_do_norte + luvas_de_batalha): "Soma armas brancas no dano"
+  // Nv3 duplica efeitos do Nv1 → multiplicador 2 quando selLv >= 3
+  fatiador: { minLevel: 1, statKey: 'armasBrancas', label: 'Armas Brancas', tripleInTwoHand: true,
+    multiplier: (selLv) => selLv >= 3 ? 2 : 1 },
+  // fighter (luvas_de_batalha) Nv2: "Soma Briga em acerto e dano"
+  fighter:  { minLevel: 2, statKey: 'briga', label: 'Briga', tripleInTwoHand: true,
+    multiplier: () => 1, acerto: true },
+};
+
+// Retorna bonuses de dano de habilidades selecionadas
+// Retorna [{ label, val, tripleInTwoHand, acerto }]
+function getSkillDamageBonuses(acquiredSkills, skillLevels, characterSkills) {
+  const out = [];
+  for (const sk of acquiredSkills) {
+    const mod = WEAPON_SKILL_DAMAGE_MODS[sk.id];
+    if (!mod) continue;
+    const selLv = skillLevels[sk.id] ?? 0;
+    if (selLv < mod.minLevel) continue;
+    const baseVal = characterSkills[mod.statKey] ?? 0;
+    const mult    = mod.multiplier(selLv);
+    out.push({ label: mod.label, val: baseVal * mult,
+               tripleInTwoHand: mod.tripleInTwoHand, acerto: mod.acerto ?? false });
+  }
+  return out;
+}
+
+// Extrai efeitos com quantidade dos textos das habilidades selecionadas
+const EFFECT_PARSERS = [
+  { re: /(\d+)\s*de\s*pressão/i,     label: 'Pressão' },
+  { re: /(\d+)\s*de\s*sangramento/i, label: 'Sangramento' },
+  { re: /(\d+)\s*de\s*veneno/i,      label: 'Veneno' },
+  { re: /perfura|penetra/i,          label: 'Penetração', fixed: 1 },
+  { re: /engajado/i,                 label: 'Engajado',   fixed: 1 },
+  { re: /desmaio|desmaia/i,          label: 'Desmaio',    fixed: 1 },
+  { re: /deslocamento/i,             label: 'Deslocamento', fixed: 1 },
+];
+
+function extractEffectsWithQty(skills, skillLevels) {
+  const totals = {};
+  for (const sk of skills) {
+    const selLv = skillLevels[sk.id] ?? 0;
+    // fatiador Nv3 duplica efeitos
+    const mult = (sk.id === 'fatiador' && selLv >= 3) ? 2 : 1;
+    for (let lv = 1; lv <= selLv; lv++) {
+      const desc = typeof sk.niveis[String(lv)] === 'string' ? sk.niveis[String(lv)] : '';
+      for (const p of EFFECT_PARSERS) {
+        const m = p.re.exec(desc);
+        if (m) {
+          const qty = p.fixed ?? parseInt(m[1]);
+          totals[p.label] = (totals[p.label] ?? 0) + qty * mult;
+        }
+      }
+    }
+  }
+  return Object.entries(totals).map(([label, qty]) => ({ label, qty }));
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function trailById(id) {
@@ -368,6 +408,19 @@ function AttackPanel({ actionsLeft, onConfirm }) {
   const acquiredSkills = weapon
     ? getWeaponSkills(weapon.tipo, character.skillTree?.acquiredTrails)
     : [];
+
+  // Bônus de dano de habilidades selecionadas
+  const skillDamageBonuses = getSkillDamageBonuses(acquiredSkills, skillLevels, skills ?? {});
+
+  // Adiciona bônus de habilidades à fórmula
+  if (formula && skillDamageBonuses.length > 0) {
+    for (const bonus of skillDamageBonuses) {
+      const effectiveVal = (twoHand && bonus.tripleInTwoHand) ? bonus.val * 3 : bonus.val;
+      const lbl = (twoHand && bonus.tripleInTwoHand) ? `${bonus.label}×3 (${bonus.val}×3)` : bonus.label;
+      formula.partes.push({ label: lbl, val: effectiveVal });
+      formula.total += effectiveVal;
+    }
+  }
 
   // Energia total = 1 (ataque) + soma dos níveis selecionados de habilidades
   const skillEnergyCost = Object.values(skillLevels).reduce((acc, lv) => acc + lv, 0);
@@ -533,10 +586,9 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 
       {/* Efeitos aplicados */}
       {weapon && (() => {
-        const dmgTypes = getWeaponDamageTypes(weapon.tipo);
-        const skillEffects = extractEffects(acquiredSkills, skillLevels);
-        const all = [...dmgTypes, ...skillEffects];
-        if (all.length === 0) return null;
+        const dmgTypes    = getWeaponDamageTypes(weapon.tipo);
+        const skillFx     = extractEffectsWithQty(acquiredSkills, skillLevels);
+        if (dmgTypes.length === 0 && skillFx.length === 0) return null;
         return (
           <View style={s.effectsBox}>
             <Text style={s.effectsBoxLabel}>Efeitos aplicados:</Text>
@@ -546,9 +598,9 @@ function AttackPanel({ actionsLeft, onConfirm }) {
                   <Text style={[s.effectTagText, { color: DAMAGE_TYPE_COLORS[t] ?? '#6c7086' }]}>{t}</Text>
                 </View>
               ))}
-              {skillEffects.map(t => (
-                <View key={t} style={[s.effectTag, s.effectTagSkill]}>
-                  <Text style={s.effectTagTextSkill}>{t}</Text>
+              {skillFx.map(({ label, qty }) => (
+                <View key={label} style={[s.effectTag, s.effectTagSkill]}>
+                  <Text style={s.effectTagTextSkill}>{label} +{qty}</Text>
                 </View>
               ))}
             </View>
@@ -597,7 +649,7 @@ function DefendPanel({ actionsLeft, onConfirm }) {
     ? getWeaponSkills(shieldSlot.tipo, character.skillTree?.acquiredTrails)
     : [];
   const shieldSkillCost = Object.values(shieldSkillLevels).reduce((a, v) => a + v, 0);
-  const shieldEffects = extractEffects(shieldSkills, shieldSkillLevels);
+  const shieldEffects = extractEffectsWithQty(shieldSkills, shieldSkillLevels);
 
   const energiaAtual = character.status?.energia?.current ?? 0;
   const energyCost = mode === 'esquivar' ? 1 + shieldSkillCost : shieldSkillCost;
@@ -696,9 +748,9 @@ function DefendPanel({ actionsLeft, onConfirm }) {
         <View style={s.effectsBox}>
           <Text style={s.effectsBoxLabel}>Efeitos do bloqueio:</Text>
           <View style={s.effectsTags}>
-            {shieldEffects.map(t => (
-              <View key={t} style={[s.effectTag, s.effectTagSkill]}>
-                <Text style={s.effectTagTextSkill}>{t}</Text>
+            {shieldEffects.map(({ label, qty }) => (
+              <View key={label} style={[s.effectTag, s.effectTagSkill]}>
+                <Text style={s.effectTagTextSkill}>{label} +{qty}</Text>
               </View>
             ))}
           </View>
