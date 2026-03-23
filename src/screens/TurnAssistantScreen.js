@@ -12,7 +12,219 @@ import { TITLE_BY_ID } from '../data/titlesData';
 const RANGED_CATEGORIES = ['ARCOS'];
 const MAGIC_WEAPON_CATEGORIES = ['CETROS MÁGICOS', 'VARINHAS', 'SUPORTE DE CAMPO', 'SUPORTE MÁGICO', 'SUPORTE CERIMONIAL'];
 
-const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
+// Tipo de dano por categoria de arma
+const WEAPON_DAMAGE_TYPES = {
+  'ESPADAS':            ['Cortante'],
+  'MACHADOS':           ['Cortante'],
+  'ARMAS LONGAS':       ['Perfurante'],
+  'ARCOS':              ['Perfurante'],
+  'ARMAS CURTAS':       ['Cortante', 'Perfurante'],
+  'CETROS MÁGICOS':     ['Contundente', 'Mágico'],
+  'VARINHAS':           ['Mágico'],
+  'ESCUDOS':            ['Contundente'],
+  'SUPORTE DE CAMPO':   ['Suporte'],
+  'SUPORTE MÁGICO':     ['Mágico'],
+  'SUPORTE CERIMONIAL': ['Suporte'],
+};
+
+const DAMAGE_TYPE_COLORS = {
+  Cortante:    '#f38ba8',
+  Perfurante:  '#fab387',
+  Contundente: '#a6e3a1',
+  Mágico:      '#cba6f7',
+  Suporte:     '#89b4fa',
+};
+
+// Palavras-chave de efeitos nos textos das habilidades
+const EFFECT_KEYWORDS = [
+  { re: /pressão/i,              label: 'Pressão' },
+  { re: /sangramento/i,          label: 'Sangramento' },
+  { re: /envenenado|veneno/i,    label: 'Veneno' },
+  { re: /perfura|penetra/i,      label: 'Penetração' },
+  { re: /engajado/i,             label: 'Engajado' },
+  { re: /desmaio|desmaia/i,      label: 'Desmaio' },
+  { re: /empurr|deslocamento/i,  label: 'Deslocamento' },
+];
+
+function getWeaponDamageTypes(tipoId) {
+  const trail = trailById(tipoId);
+  return WEAPON_DAMAGE_TYPES[trail?.categoria ?? ''] ?? [];
+}
+
+// Extrai efeitos mencionados nos textos das habilidades selecionadas
+function extractEffects(skills, skillLevels) {
+  const found = new Set();
+  for (const sk of skills) {
+    const selLv = skillLevels[sk.id] ?? 0;
+    for (let lv = 1; lv <= selLv; lv++) {
+      const desc = sk.niveis[String(lv)] ?? '';
+      for (const kw of EFFECT_KEYWORDS) {
+        if (kw.re.test(desc)) found.add(kw.label);
+      }
+    }
+  }
+  return [...found];
+}
+
+// ─── Dados de Mira ────────────────────────────────────────────────────────────
+
+const ALVOS_HUMANOIDE = [
+  {
+    id: 'membros',
+    label: 'Membros',
+    dificuldade: 20,
+    cortanteOnly: false,
+    efeitos: [
+      { hits: 1, efeito: '+5 dificuldade em ações na cena' },
+      { hits: 2, efeito: '+10 dificuldade em ações na cena' },
+      { hits: 3, efeito: 'Perde função do membro até se recuperar' },
+      { hits: 4, efeito: 'Decepação do membro' },
+    ],
+    nota: 'Efeito acumula a cada acerto consecutivo no mesmo membro',
+  },
+  {
+    id: 'orgaos',
+    label: 'Órgãos',
+    dificuldade: 25,
+    cortanteOnly: true,
+    efeito: 'Causa 3 de Sangramento (requer dano Cortante)',
+  },
+  {
+    id: 'coracao',
+    label: 'Coração',
+    dificuldade: 30,
+    cortanteOnly: true,
+    efeito: 'Causa 6 de Sangramento (requer dano Cortante)',
+  },
+  {
+    id: 'cabeca',
+    label: 'Cabeça',
+    dificuldade: 35,
+    cortanteOnly: false,
+    efeito: 'Desmaio. Alvo faz 1 teste/turno para despertar (Concentração + d20 ≥ 50 − Vida máxima); falha reduz dificuldade em 5 no próximo',
+  },
+];
+
+const ALVOS_OBJETO_TAMANHO = ['Grande', 'Médio', 'Pequeno'];
+const ALVOS_OBJETO_VELOC   = ['Normal', 'Rápido/Assimétrico'];
+const OBJETO_DIFICULDADE   = {
+  'Grande-Normal': 20, 'Médio-Normal': 20, 'Pequeno-Normal': 20,
+  'Grande-Rápido/Assimétrico': 25,
+  'Médio-Rápido/Assimétrico':  30,
+  'Pequeno-Rápido/Assimétrico': 35,
+};
+
+const TAMANHO_VOLUME = { Grande: 'acima de 2m³', Médio: 'entre 1-2m³', Pequeno: 'abaixo de 1m³' };
+
+// ─── Componente de Mira ───────────────────────────────────────────────────────
+function MiraPanel({ damageTypes }) {
+  const [tipoAlvo, setTipoAlvo]   = useState(null);  // 'humanoide' | 'objeto'
+  const [alvoId, setAlvoId]       = useState(null);
+  const [objTam, setObjTam]       = useState('Médio');
+  const [objVeloc, setObjVeloc]   = useState('Normal');
+
+  const dificuldadeObj = OBJETO_DIFICULDADE[`${objTam}-${objVeloc}`] ?? 20;
+  const alvoHum = ALVOS_HUMANOIDE.find(a => a.id === alvoId);
+  const isCortante = damageTypes.includes('Cortante');
+
+  return (
+    <View style={s.miraBox}>
+      <Text style={s.subLabel}>Mira (opcional)</Text>
+
+      {/* Tipo de alvo */}
+      <View style={s.chipRow}>
+        {[['humanoide', '🧍 Humanoide'], ['objeto', '📦 Objeto']].map(([id, lbl]) => (
+          <TouchableOpacity
+            key={id}
+            style={[s.chip, tipoAlvo === id && s.chipActive]}
+            onPress={() => { setTipoAlvo(tipoAlvo === id ? null : id); setAlvoId(null); }}
+          >
+            <Text style={[s.chipText, tipoAlvo === id && s.chipTextActive]}>{lbl}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Humanoide: partes do corpo */}
+      {tipoAlvo === 'humanoide' && (
+        <>
+          <View style={s.chipRow}>
+            {ALVOS_HUMANOIDE.map(a => {
+              const bloqueado = a.cortanteOnly && !isCortante;
+              return (
+                <TouchableOpacity
+                  key={a.id}
+                  style={[s.chip, alvoId === a.id && s.chipActive, bloqueado && s.chipDisabled]}
+                  onPress={() => !bloqueado && setAlvoId(alvoId === a.id ? null : a.id)}
+                  disabled={bloqueado}
+                >
+                  <Text style={[s.chipText, alvoId === a.id && s.chipTextActive, bloqueado && s.chipTextDisabled]}>
+                    {a.label}
+                  </Text>
+                  <Text style={[s.chipSub, alvoId === a.id && s.chipSubActive, bloqueado && s.chipTextDisabled]}>
+                    {bloqueado ? 'requer Cortante' : `dif. ${a.dificuldade}`}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {alvoHum && (
+            <View style={s.miraResult}>
+              <View style={s.miraDifRow}>
+                <Text style={s.miraDifLabel}>Dificuldade do acerto</Text>
+                <Text style={s.miraDifVal}>{alvoHum.dificuldade}</Text>
+              </View>
+              {'efeitos' in alvoHum ? (
+                <>
+                  {alvoHum.efeitos.map(e => (
+                    <View key={e.hits} style={s.miraEfeitoRow}>
+                      <Text style={s.miraEfeitoHits}>{e.hits}×</Text>
+                      <Text style={s.miraEfeitoText}>{e.efeito}</Text>
+                    </View>
+                  ))}
+                  {alvoHum.nota && <Text style={s.miraNota}>{alvoHum.nota}</Text>}
+                </>
+              ) : (
+                <Text style={s.miraEfeitoSingle}>{alvoHum.efeito}</Text>
+              )}
+            </View>
+          )}
+        </>
+      )}
+
+      {/* Objeto: tamanho + velocidade */}
+      {tipoAlvo === 'objeto' && (
+        <>
+          <Text style={s.miraSubLabel}>Tamanho</Text>
+          <View style={s.chipRow}>
+            {ALVOS_OBJETO_TAMANHO.map(t => (
+              <TouchableOpacity key={t} style={[s.chip, objTam === t && s.chipActive]} onPress={() => setObjTam(t)}>
+                <Text style={[s.chipText, objTam === t && s.chipTextActive]}>{t}</Text>
+                <Text style={[s.chipSub, objTam === t && s.chipSubActive]}>{TAMANHO_VOLUME[t]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={s.miraSubLabel}>Velocidade</Text>
+          <View style={s.chipRow}>
+            {ALVOS_OBJETO_VELOC.map(v => (
+              <TouchableOpacity key={v} style={[s.chip, objVeloc === v && s.chipActive]} onPress={() => setObjVeloc(v)}>
+                <Text style={[s.chipText, objVeloc === v && s.chipTextActive]}>{v}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={s.miraResult}>
+            <View style={s.miraDifRow}>
+              <Text style={s.miraDifLabel}>Dificuldade do acerto</Text>
+              <Text style={s.miraDifVal}>{dificuldadeObj}</Text>
+            </View>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+
 const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
 const DEFAULT_DURACAO     = {
   1: '1 cena / 3 turnos',
@@ -46,14 +258,19 @@ function isMagicWeapon(tipoId) {
   return MAGIC_WEAPON_CATEGORIES.includes(trailById(tipoId)?.categoria ?? '');
 }
 
-// Retorna skills adquiridas da trilha da arma equipada
+// Retorna skills adquiridas da trilha da arma equipada com descrições por nível
 function getWeaponSkills(tipoId, acquiredTrails) {
   if (!tipoId || !acquiredTrails?.[tipoId]) return [];
   const trail = TRAILS_ARMAS.find(t => t.id === tipoId);
   if (!trail) return [];
   const trailData = acquiredTrails[tipoId];
   return trail.skills
-    .map(sk => ({ nome: sk.nome, level: trailData.skills?.[sk.id] ?? 0 }))
+    .map(sk => ({
+      id:     sk.id,
+      nome:   sk.nome,
+      level:  trailData.skills?.[sk.id] ?? 0,
+      niveis: sk.niveis ?? {},
+    }))
     .filter(sk => sk.level > 0);
 }
 
@@ -89,14 +306,15 @@ function getAcquiredMagicSpells(acquiredTrails) {
 function AttackPanel({ actionsLeft, onConfirm }) {
   const { character, dispatch } = useCharacter();
   const { attributes: attrs, skills } = character;
-  const forca    = attrs?.robustez?.forca     ?? 0;
-  const destreza = attrs?.robustez?.destreza  ?? 0;
-  const armasBrancas = skills?.armasBrancas   ?? 0;
-  const armasRange   = skills?.armasRange     ?? 0;
+  const forca        = attrs?.robustez?.forca    ?? 0;
+  const destreza     = attrs?.robustez?.destreza ?? 0;
+  const armasBrancas = skills?.armasBrancas      ?? 0;
+  const armasRange   = skills?.armasRange        ?? 0;
 
-  const [selSlot, setSelSlot]   = useState(null);
-  const [twoHand, setTwoHand]   = useState(false);
-  const [selSkills, setSelSkills] = useState([]);
+  const [selSlot,   setSelSlot]   = useState(null);
+  const [twoHand,   setTwoHand]   = useState(false);
+  // { [skillId]: selectedLevel }  — 0 = não usar
+  const [skillLevels, setSkillLevels] = useState({});
 
   const weapons = HAND_SLOTS
     .map(k => ({ key: k, label: EQUIP_LABELS[k], equip: character.equipment[k] }))
@@ -104,21 +322,28 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 
   const weapon = weapons.find(w => w.key === selSlot)?.equip ?? null;
   const nivel  = weapon?.nivel ?? 1;
-
   const ranged = weapon ? isRanged(weapon.tipo) : false;
   const magicW = weapon ? isMagicWeapon(weapon.tipo) : false;
 
-  // Fórmula de dano
+  // Fórmula de dano base
   let formula = null;
+  let acertoFormula = null; // separado para armas de distância
   if (weapon) {
     if (ranged) {
-      formula = {
+      acertoFormula = {
         partes: [
           { label: 'Armas Range', val: armasRange },
           { label: 'Destreza', val: destreza },
-          { label: `Nível (${nivel})`, val: nivel },
+          { label: 'd20', val: 'd20', dado: true },
         ],
-        total: armasRange + destreza + nivel,
+        total: armasRange + destreza,
+      };
+      formula = {
+        partes: [
+          { label: `Nível (${nivel})`, val: nivel },
+          { label: 'Força', val: forca },
+        ],
+        total: nivel + forca,
       };
     } else if (twoHand) {
       formula = {
@@ -140,20 +365,25 @@ function AttackPanel({ actionsLeft, onConfirm }) {
     }
   }
 
-  const acquiredSkills = weapon ? getWeaponSkills(weapon.tipo, character.skillTree?.acquiredTrails) : [];
+  const acquiredSkills = weapon
+    ? getWeaponSkills(weapon.tipo, character.skillTree?.acquiredTrails)
+    : [];
 
-  function toggleSkill(nome) {
-    setSelSkills(prev =>
-      prev.includes(nome) ? prev.filter(s => s !== nome) : [...prev, nome]
-    );
+  // Energia total = 1 (ataque) + soma dos níveis selecionados de habilidades
+  const skillEnergyCost = Object.values(skillLevels).reduce((acc, lv) => acc + lv, 0);
+  const totalEnergy = 1 + skillEnergyCost;
+  const energiaAtual = character.status?.energia?.current ?? 0;
+  const podeAtacar = !!weapon && actionsLeft >= 1 && energiaAtual >= totalEnergy;
+
+  function setSkillLevel(skillId, lv) {
+    setSkillLevels(prev => ({ ...prev, [skillId]: lv }));
   }
 
   function confirm() {
-    if (!weapon || actionsLeft < 1) return;
-    // Desconta 1 energia
-    dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -1 });
+    if (!podeAtacar) return;
+    dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -totalEnergy });
     onConfirm();
-    setSelSkills([]);
+    setSkillLevels({});
   }
 
   return (
@@ -170,7 +400,7 @@ function AttackPanel({ actionsLeft, onConfirm }) {
               <TouchableOpacity
                 key={w.key}
                 style={[s.chip, selSlot === w.key && s.chipActive]}
-                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSelSkills([]); }}
+                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSkillLevels({}); }}
               >
                 <Text style={[s.chipText, selSlot === w.key && s.chipTextActive]}>
                   {w.equip.nome || w.label}
@@ -198,6 +428,28 @@ function AttackPanel({ actionsLeft, onConfirm }) {
         </>
       )}
 
+      {acertoFormula && (
+        <View style={s.formulaCard}>
+          <Text style={s.formulaTitle}>🎯 Teste de Acerto</Text>
+          <View style={s.formulaParts}>
+            {acertoFormula.partes.map((p, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <Text style={s.formulaOp}>+</Text>}
+                <View style={s.formulaPart}>
+                  <Text style={p.dado ? s.formulaValDado : s.formulaVal}>{p.val}</Text>
+                  <Text style={s.formulaLbl}>{p.label}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+            <Text style={s.formulaOp}>=</Text>
+            <View style={[s.formulaPart, s.formulaTotal]}>
+              <Text style={s.formulaTotalVal}>{acertoFormula.total} + d20</Text>
+              <Text style={s.formulaLbl}>Base</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
       {formula && (
         <View style={s.formulaCard}>
           <Text style={s.formulaTitle}>⚔️ Dano Base</Text>
@@ -217,45 +469,110 @@ function AttackPanel({ actionsLeft, onConfirm }) {
               <Text style={s.formulaLbl}>Total</Text>
             </View>
           </View>
-          <Text style={s.formulaNote}>+ d20 de acerto (role separado)</Text>
+          {!ranged && <Text style={s.formulaNote}>+ d20 de acerto (role separado)</Text>}
         </View>
       )}
 
       {acquiredSkills.length > 0 && (
         <>
           <Text style={s.subLabel}>Habilidades da Arma</Text>
-          <Text style={s.hint}>Selecione as que irá aplicar neste ataque</Text>
-          {acquiredSkills.map(sk => (
-            <TouchableOpacity
-              key={sk.nome}
-              style={[s.skillRow, selSkills.includes(sk.nome) && s.skillRowActive]}
-              onPress={() => toggleSkill(sk.nome)}
-            >
-              <View style={[s.skillCheck, selSkills.includes(sk.nome) && s.skillCheckActive]}>
-                {selSkills.includes(sk.nome) && <Text style={s.skillCheckMark}>✓</Text>}
+          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
+          {acquiredSkills.map(sk => {
+            const selLv = skillLevels[sk.id] ?? 0;
+            return (
+              <View key={sk.id} style={[s.skillCard, selLv > 0 && s.skillCardActive]}>
+                {/* Header: nome + seletor de nível */}
+                <View style={s.skillCardHeader}>
+                  <Text style={[s.skillName, selLv > 0 && s.skillNameActive]}>{sk.nome}</Text>
+                  <View style={s.lvlPicker}>
+                    {/* Botão "não usar" */}
+                    <TouchableOpacity
+                      style={[s.lvlBtn, selLv === 0 && s.lvlBtnOff]}
+                      onPress={() => setSkillLevel(sk.id, 0)}
+                    >
+                      <Text style={[s.lvlBtnText, selLv === 0 && s.lvlBtnTextOff]}>—</Text>
+                    </TouchableOpacity>
+                    {Array.from({ length: sk.level }, (_, i) => i + 1).map(lv => (
+                      <TouchableOpacity
+                        key={lv}
+                        style={[s.lvlBtn, selLv >= lv && s.lvlBtnActive]}
+                        onPress={() => setSkillLevel(sk.id, lv)}
+                      >
+                        <Text style={[s.lvlBtnText, selLv >= lv && s.lvlBtnTextActive]}>
+                          {lv}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    {selLv > 0 && (
+                      <Text style={s.lvlCost}>−{selLv}⚡</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* Descrição dos níveis selecionados */}
+                {selLv > 0 && Array.from({ length: selLv }, (_, i) => i + 1).map(lv => {
+                  const desc = sk.niveis[String(lv)];
+                  if (!desc) return null;
+                  return (
+                    <View key={lv} style={s.lvlDesc}>
+                      <Text style={s.lvlDescBadge}>Nv {lv}</Text>
+                      <Text style={s.lvlDescText}>{desc}</Text>
+                    </View>
+                  );
+                })}
               </View>
-              <Text style={[s.skillName, selSkills.includes(sk.nome) && s.skillNameActive]}>
-                {sk.nome}
-              </Text>
-              <Text style={s.skillLevel}>Nv {sk.level}</Text>
-            </TouchableOpacity>
-          ))}
+            );
+          })}
         </>
       )}
 
-      {selSkills.length > 0 && (
-        <View style={s.effectsNote}>
-          <Text style={s.effectsLabel}>Efeitos ativos:</Text>
-          <Text style={s.effectsList}>{selSkills.join(', ')}</Text>
+      {/* Mira */}
+      {weapon && (
+        <MiraPanel damageTypes={getWeaponDamageTypes(weapon.tipo)} />
+      )}
+
+      {/* Efeitos aplicados */}
+      {weapon && (() => {
+        const dmgTypes = getWeaponDamageTypes(weapon.tipo);
+        const skillEffects = extractEffects(acquiredSkills, skillLevels);
+        const all = [...dmgTypes, ...skillEffects];
+        if (all.length === 0) return null;
+        return (
+          <View style={s.effectsBox}>
+            <Text style={s.effectsBoxLabel}>Efeitos aplicados:</Text>
+            <View style={s.effectsTags}>
+              {dmgTypes.map(t => (
+                <View key={t} style={[s.effectTag, { borderColor: DAMAGE_TYPE_COLORS[t] ?? '#6c7086' }]}>
+                  <Text style={[s.effectTagText, { color: DAMAGE_TYPE_COLORS[t] ?? '#6c7086' }]}>{t}</Text>
+                </View>
+              ))}
+              {skillEffects.map(t => (
+                <View key={t} style={[s.effectTag, s.effectTagSkill]}>
+                  <Text style={s.effectTagTextSkill}>{t}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      })()}
+
+      {/* Resumo de energia */}
+      {weapon && (
+        <View style={[s.energySummary, !podeAtacar && energiaAtual < totalEnergy && s.energySummaryWarn]}>
+          <Text style={s.energySummaryLabel}>Custo total de Energia:</Text>
+          <Text style={s.energySummaryVal}>
+            1 ataque{skillEnergyCost > 0 ? ` + ${skillEnergyCost} habilidades` : ''} = {totalEnergy}⚡
+          </Text>
+          <Text style={s.energySummaryCur}>(você tem {energiaAtual})</Text>
         </View>
       )}
 
       <TouchableOpacity
-        style={[s.confirmBtn, (!weapon || actionsLeft < 1) && s.confirmBtnDisabled]}
+        style={[s.confirmBtn, !podeAtacar && s.confirmBtnDisabled]}
         onPress={confirm}
-        disabled={!weapon || actionsLeft < 1}
+        disabled={!podeAtacar}
       >
-        <Text style={s.confirmBtnText}>Confirmar Ataque  −1 Ação  −1 Energia</Text>
+        <Text style={s.confirmBtnText}>Confirmar Ataque  −1 Ação  −{totalEnergy} Energia</Text>
       </TouchableOpacity>
     </View>
   );
@@ -265,18 +582,32 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 function DefendPanel({ actionsLeft, onConfirm }) {
   const { character, dispatch } = useCharacter();
   const { skills } = character;
-  const reflexo   = skills?.reflexo   ?? 0;
-  const esportes  = skills?.esportes  ?? 0;
-  const [mode, setMode] = useState('bloquear');
+  const reflexo  = skills?.reflexo  ?? 0;
+  const esportes = skills?.esportes ?? 0;
+  const [mode, setMode]           = useState('bloquear');
+  const [shieldSkillLevels, setShieldSkillLevels] = useState({});
 
   const { totalArmadura } = computeDefenseTotals(character.equipment, character.accessories);
 
+  // Detecta escudo equipado numa das mãos
+  const shieldSlot = HAND_SLOTS.map(k => character.equipment[k]).find(
+    eq => trailById(eq?.tipo)?.categoria === 'ESCUDOS'
+  ) ?? null;
+  const shieldSkills = shieldSlot
+    ? getWeaponSkills(shieldSlot.tipo, character.skillTree?.acquiredTrails)
+    : [];
+  const shieldSkillCost = Object.values(shieldSkillLevels).reduce((a, v) => a + v, 0);
+  const shieldEffects = extractEffects(shieldSkills, shieldSkillLevels);
+
+  const energiaAtual = character.status?.energia?.current ?? 0;
+  const energyCost = mode === 'esquivar' ? 1 + shieldSkillCost : shieldSkillCost;
+  const podeDefender = actionsLeft >= 1 && energiaAtual >= energyCost;
+
   function confirm() {
-    if (actionsLeft < 1) return;
-    if (mode === 'esquivar') {
-      dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -1 });
-    }
+    if (!podeDefender) return;
+    if (energyCost > 0) dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -energyCost });
     onConfirm();
+    setShieldSkillLevels({});
   }
 
   return (
@@ -322,15 +653,67 @@ function DefendPanel({ actionsLeft, onConfirm }) {
         </View>
       )}
 
+      {/* Habilidades do escudo (se equipado) */}
+      {mode === 'bloquear' && shieldSkills.length > 0 && (
+        <>
+          <Text style={s.subLabel}>Habilidades do Escudo</Text>
+          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
+          {shieldSkills.map(sk => {
+            const selLv = shieldSkillLevels[sk.id] ?? 0;
+            return (
+              <View key={sk.id} style={[s.skillCard, selLv > 0 && s.skillCardActive]}>
+                <View style={s.skillCardHeader}>
+                  <Text style={[s.skillName, selLv > 0 && s.skillNameActive]}>{sk.nome}</Text>
+                  <View style={s.lvlPicker}>
+                    <TouchableOpacity style={[s.lvlBtn, selLv === 0 && s.lvlBtnOff]} onPress={() => setShieldSkillLevels(p => ({ ...p, [sk.id]: 0 }))}>
+                      <Text style={[s.lvlBtnText, selLv === 0 && s.lvlBtnTextOff]}>—</Text>
+                    </TouchableOpacity>
+                    {Array.from({ length: sk.level }, (_, i) => i + 1).map(lv => (
+                      <TouchableOpacity key={lv} style={[s.lvlBtn, selLv >= lv && s.lvlBtnActive]} onPress={() => setShieldSkillLevels(p => ({ ...p, [sk.id]: lv }))}>
+                        <Text style={[s.lvlBtnText, selLv >= lv && s.lvlBtnTextActive]}>{lv}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {selLv > 0 && <Text style={s.lvlCost}>−{selLv}⚡</Text>}
+                  </View>
+                </View>
+                {selLv > 0 && Array.from({ length: selLv }, (_, i) => i + 1).map(lv => {
+                  const desc = sk.niveis[String(lv)];
+                  return desc ? (
+                    <View key={lv} style={s.lvlDesc}>
+                      <Text style={s.lvlDescBadge}>Nv {lv}</Text>
+                      <Text style={s.lvlDescText}>{desc}</Text>
+                    </View>
+                  ) : null;
+                })}
+              </View>
+            );
+          })}
+        </>
+      )}
+
+      {/* Efeitos do bloqueio */}
+      {mode === 'bloquear' && shieldEffects.length > 0 && (
+        <View style={s.effectsBox}>
+          <Text style={s.effectsBoxLabel}>Efeitos do bloqueio:</Text>
+          <View style={s.effectsTags}>
+            {shieldEffects.map(t => (
+              <View key={t} style={[s.effectTag, s.effectTagSkill]}>
+                <Text style={s.effectTagTextSkill}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       <TouchableOpacity
-        style={[s.confirmBtn, actionsLeft < 1 && s.confirmBtnDisabled]}
+        style={[s.confirmBtn, !podeDefender && s.confirmBtnDisabled]}
         onPress={confirm}
-        disabled={actionsLeft < 1}
+        disabled={!podeDefender}
       >
         <Text style={s.confirmBtnText}>
           {mode === 'esquivar'
-            ? 'Confirmar Esquiva  −1 Ação  −1 Energia'
-            : 'Confirmar Bloqueio  −1 Ação'}
+            ? `Confirmar Esquiva  −1 Ação${energyCost > 1 ? `  −${energyCost} Energia` : '  −1 Energia'}`
+            : `Confirmar Bloqueio  −1 Ação${shieldSkillCost > 0 ? `  −${shieldSkillCost} Energia` : ''}`}
         </Text>
       </TouchableOpacity>
     </View>
@@ -676,7 +1059,8 @@ const s = StyleSheet.create({
   formulaTitle: { color: '#cdd6f4', fontSize: 13, fontWeight: '700', marginBottom: 10 },
   formulaParts: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   formulaPart:  { alignItems: 'center', minWidth: 50 },
-  formulaVal:   { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
+  formulaVal:     { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
+  formulaValDado: { color: '#f9e2af', fontSize: 20, fontWeight: 'bold', fontStyle: 'italic' },
   formulaLbl:   { color: '#6c7086', fontSize: 10, textAlign: 'center' },
   formulaOp:    { color: '#45475a', fontSize: 18, fontWeight: 'bold', alignSelf: 'center' },
   formulaTotal: { backgroundColor: '#1e3a5f', borderRadius: 8, padding: 6 },
@@ -686,19 +1070,53 @@ const s = StyleSheet.create({
   statLineLabel:{ color: '#6c7086', fontSize: 13 },
   statLineVal:  { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
 
-  // Habilidades de arma
-  skillRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#1e1e2e', borderRadius: 8, padding: 10, marginBottom: 4, borderWidth: 1, borderColor: '#2e2e4e' },
-  skillRowActive: { borderColor: '#a6e3a1', backgroundColor: '#1a2e1a' },
-  skillCheck:     { width: 20, height: 20, borderRadius: 4, borderWidth: 1.5, borderColor: '#45475a', alignItems: 'center', justifyContent: 'center' },
-  skillCheckActive: { backgroundColor: '#a6e3a1', borderColor: '#a6e3a1' },
-  skillCheckMark: { color: '#11111b', fontSize: 12, fontWeight: 'bold' },
-  skillName:      { color: '#6c7086', fontSize: 13, flex: 1 },
-  skillNameActive:{ color: '#a6e3a1' },
-  skillLevel:     { color: '#45475a', fontSize: 11 },
+  // Habilidades de arma (level picker)
+  skillCard:       { backgroundColor: '#1e1e2e', borderRadius: 10, padding: 10, marginBottom: 6, borderWidth: 1, borderColor: '#2e2e4e' },
+  skillCardActive: { borderColor: '#a6e3a1', backgroundColor: '#111f11' },
+  skillCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  skillName:       { color: '#6c7086', fontSize: 13, fontWeight: '600', flex: 1 },
+  skillNameActive: { color: '#a6e3a1' },
 
-  effectsNote:  { backgroundColor: '#1a2e1a', borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#a6e3a1' },
-  effectsLabel: { color: '#a6e3a1', fontSize: 11, fontWeight: '700', marginBottom: 2 },
-  effectsList:  { color: '#cdd6f4', fontSize: 12 },
+  lvlPicker:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  lvlBtn:       { width: 28, height: 28, borderRadius: 6, backgroundColor: '#313244', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#45475a' },
+  lvlBtnOff:    { backgroundColor: '#1e1e2e', borderColor: '#313244' },
+  lvlBtnActive: { backgroundColor: '#a6e3a1', borderColor: '#a6e3a1' },
+  lvlBtnText:       { color: '#6c7086', fontSize: 13, fontWeight: '700' },
+  lvlBtnTextOff:    { color: '#45475a' },
+  lvlBtnTextActive: { color: '#11111b' },
+  lvlCost:      { color: '#a6e3a1', fontSize: 12, fontWeight: '700', marginLeft: 4 },
+
+  lvlDesc:      { flexDirection: 'row', gap: 6, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#2e2e4e' },
+  lvlDescBadge: { color: '#a6e3a1', fontSize: 11, fontWeight: '700', minWidth: 28 },
+  lvlDescText:  { color: '#a6adc8', fontSize: 12, lineHeight: 17, flex: 1 },
+
+  energySummary:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1e1e2e', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#2e2e4e' },
+  energySummaryWarn: { borderColor: '#f38ba8' },
+  energySummaryLabel:{ color: '#6c7086', fontSize: 12 },
+  energySummaryVal:  { color: '#cdd6f4', fontSize: 13, fontWeight: '700', flex: 1 },
+  energySummaryCur:  { color: '#45475a', fontSize: 11 },
+
+  miraBox:        { marginTop: 8 },
+  miraSubLabel:   { color: '#45475a', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, marginTop: 6 },
+  chipDisabled:       { opacity: 0.4 },
+  chipTextDisabled:   { color: '#45475a' },
+  miraResult:     { backgroundColor: '#181825', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#fab38740', marginTop: 4 },
+  miraDifRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  miraDifLabel:   { color: '#6c7086', fontSize: 12, flex: 1 },
+  miraDifVal:     { color: '#fab387', fontSize: 22, fontWeight: 'bold' },
+  miraEfeitoRow:  { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  miraEfeitoHits: { color: '#fab387', fontSize: 12, fontWeight: '700', minWidth: 24 },
+  miraEfeitoText: { color: '#cdd6f4', fontSize: 12, lineHeight: 17, flex: 1 },
+  miraEfeitoSingle: { color: '#cdd6f4', fontSize: 12, lineHeight: 18 },
+  miraNota:       { color: '#45475a', fontSize: 11, fontStyle: 'italic', marginTop: 6 },
+
+  effectsBox:      { backgroundColor: '#1e1e2e', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#2e2e4e' },
+  effectsBoxLabel: { color: '#6c7086', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 },
+  effectsTags:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  effectTag:       { borderRadius: 6, borderWidth: 1.5, paddingHorizontal: 8, paddingVertical: 3 },
+  effectTagText:   { fontSize: 12, fontWeight: '700' },
+  effectTagSkill:      { borderColor: '#f9e2af' },
+  effectTagTextSkill:  { color: '#f9e2af', fontSize: 12, fontWeight: '700' },
 
   // Magias
   spellCard:       { backgroundColor: '#1e1e2e', borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#2e2e4e', overflow: 'hidden' },
