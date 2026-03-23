@@ -7,7 +7,8 @@ import {
 } from '../data/initialCharacter';
 import { TITLE_BY_ID } from '../data/titlesData';
 
-const QUICK_DELTAS = [-5, -1, +1, +5];
+const QUICK_DELTAS    = [-5, -1, +1, +5];
+const XP_QUICK_DELTAS = [+10, +25, +50, +100];
 const COUNTER_TIMEOUT = 5000;
 
 // Quais sub-atributos contribuem para cada status calculado
@@ -191,7 +192,7 @@ export default function StatusCard({ statusKey }) {
       </View>
 
       <View style={styles.btnRow}>
-        {QUICK_DELTAS.map((d) => (
+        {(statusKey === 'xp' ? XP_QUICK_DELTAS : QUICK_DELTAS).map((d) => (
           <TouchableOpacity
             key={d}
             style={[styles.btn, d < 0 ? styles.btnNeg : styles.btnPos]}

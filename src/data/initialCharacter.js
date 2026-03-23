@@ -39,7 +39,7 @@ export const INITIAL_CHARACTER = {
     mana:           { current: initMax.mana,           max: initMax.mana           },
     forcaDeVontade: { current: initMax.forcaDeVontade, max: initMax.forcaDeVontade },
     humanidade:     { current: 10, max: 10  },
-    xp:             { current: 0,  max: 100 },
+    xp:             { current: 0,  max: 20000 },
   },
 
   attributes: INITIAL_ATTRIBUTES,
