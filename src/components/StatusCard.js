@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
-import { STATUS_COLORS, STATUS_LABELS, COMPUTED_STATUS_KEYS } from '../data/initialCharacter';
+import { STATUS_COLORS, STATUS_LABELS, COMPUTED_STATUS_KEYS, NO_MAX_STATUS_KEYS } from '../data/initialCharacter';
 
 const QUICK_DELTAS = [-5, -1, +1, +5];
 const COUNTER_TIMEOUT = 5000;
@@ -13,6 +13,7 @@ export default function StatusCard({ statusKey }) {
   const label = STATUS_LABELS[statusKey];
   const pct   = s.max > 0 ? Math.min(s.current / s.max, 1) : 0;
   const isComputed = COMPUTED_STATUS_KEYS.includes(statusKey);
+  const noMax      = NO_MAX_STATUS_KEYS.includes(statusKey);
 
   const [deltaAcc, setDeltaAcc] = useState(0);
   const timerRef = useRef(null);
@@ -40,26 +41,30 @@ export default function StatusCard({ statusKey }) {
         <View style={[styles.dot, { backgroundColor: color }]} />
         <Text style={styles.label}>{label}</Text>
 
-        <View style={styles.maxRow}>
-          {isComputed ? (
-            <Text style={styles.computedMaxLabel}>/ {s.max} auto</Text>
-          ) : (
-            <>
-              <TouchableOpacity onPress={() => changeMax(-1)} style={styles.maxBtn}>
-                <Text style={styles.maxBtnText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.maxText}>/ {s.max}</Text>
-              <TouchableOpacity onPress={() => changeMax(+1)} style={styles.maxBtn}>
-                <Text style={styles.maxBtnText}>+</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+        {!noMax && (
+          <View style={styles.maxRow}>
+            {isComputed ? (
+              <Text style={styles.computedMaxLabel}>/ {s.max} auto</Text>
+            ) : (
+              <>
+                <TouchableOpacity onPress={() => changeMax(-1)} style={styles.maxBtn}>
+                  <Text style={styles.maxBtnText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.maxText}>/ {s.max}</Text>
+                <TouchableOpacity onPress={() => changeMax(+1)} style={styles.maxBtn}>
+                  <Text style={styles.maxBtnText}>+</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
       </View>
 
-      <View style={styles.barBg}>
-        <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: color }]} />
-      </View>
+      {!noMax && (
+        <View style={styles.barBg}>
+          <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: color }]} />
+        </View>
+      )}
 
       <View style={styles.valueRow}>
         <Text style={[styles.currentValue, { color }]}>{s.current}</Text>
