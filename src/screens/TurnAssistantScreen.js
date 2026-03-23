@@ -480,7 +480,7 @@ function AttackPanel({ actionsLeft, onConfirm }) {
 
   function confirm() {
     if (!podeAtacar) return;
-    dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -totalEnergy });
+    dispatch({ type: 'CHANGE_STATUS', statusKey: 'energia', field: 'current', delta: -totalEnergy });
     onConfirm();
     setSkillLevels({});
   }
@@ -740,7 +740,7 @@ function DefendPanel({ actionsLeft, onConfirm }) {
 
   function confirm() {
     if (!podeDefender) return;
-    if (energyCost > 0) dispatch({ type: 'CHANGE_STATUS', key: 'energia', delta: -energyCost });
+    if (energyCost > 0) dispatch({ type: 'CHANGE_STATUS', statusKey: 'energia', field: 'current', delta: -energyCost });
     onConfirm();
     setBlockLevels({});
   }
@@ -884,7 +884,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
 
   function confirm() {
     if (!spell || !podeUsarMana || actionsLeft < 1) return;
-    dispatch({ type: 'CHANGE_STATUS', key: 'mana', delta: -custoFinal });
+    dispatch({ type: 'CHANGE_STATUS', statusKey: 'mana', field: 'current', delta: -custoFinal });
     onConfirm();
     setSelSpell(null);
     setDoubleAlcance(false);
