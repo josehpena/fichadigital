@@ -192,6 +192,7 @@ export const EQUIP_LABELS = {
 
 // Statuses cujo max é calculado automaticamente
 export const COMPUTED_STATUS_KEYS = ['vida', 'energia', 'mana', 'forcaDeVontade'];
+export const NO_MAX_STATUS_KEYS   = ['xp'];
 
 // Custo total de XP para subir do nível `from` até o nível `to`
 // Cada nível intermediário custa: novoNível × costPerLevel
