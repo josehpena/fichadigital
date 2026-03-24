@@ -1,14 +1,20 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput, StyleSheet, Switch,
+  TextInput, StyleSheet, Switch, Alert,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
 
 // ── Item Slot ─────────────────────────────────────────────────────────────────
 function ItemSlot({ index, item, section, placeholder }) {
   const { dispatch } = useCharacter();
+  const [showEquip, setShowEquip] = useState(false);
   const isEmpty = !item.nome;
+
+  function equipTo(slot) {
+    dispatch({ type: 'EQUIP_FROM_INVENTORY', section, index, slot });
+    setShowEquip(false);
+  }
 
   return (
     <View style={[styles.slot, isEmpty && styles.slotEmpty]}>
@@ -20,13 +26,32 @@ function ItemSlot({ index, item, section, placeholder }) {
         onChangeText={v => dispatch({ type: 'INVENTORY_SET_ITEM', section, index, field: 'nome', value: v })}
       />
       {!isEmpty && (
-        <TextInput
-          style={styles.slotObs}
-          value={item.obs}
-          placeholder="obs..."
-          placeholderTextColor="#313244"
-          onChangeText={v => dispatch({ type: 'INVENTORY_SET_ITEM', section, index, field: 'obs', value: v })}
-        />
+        <>
+          <TextInput
+            style={styles.slotObs}
+            value={item.obs}
+            placeholder="obs..."
+            placeholderTextColor="#313244"
+            onChangeText={v => dispatch({ type: 'INVENTORY_SET_ITEM', section, index, field: 'obs', value: v })}
+          />
+          {showEquip ? (
+            <View style={styles.equipRow}>
+              <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipTo('maoDireita')}>
+                <Text style={styles.equipHandBtnText}>Mão D</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipTo('maoEsquerda')}>
+                <Text style={styles.equipHandBtnText}>Mão E</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowEquip(false)}>
+                <Text style={styles.equipCancelText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.equipBtn} onPress={() => setShowEquip(true)}>
+              <Text style={styles.equipBtnText}>⚔ Equipar</Text>
+            </TouchableOpacity>
+          )}
+        </>
       )}
     </View>
   );
@@ -155,6 +180,12 @@ const styles = StyleSheet.create({
   slotEmpty: { borderStyle: 'dashed', borderColor: '#2e2e4e' },
   slotInput: { color: '#cdd6f4', fontSize: 13, padding: 0, fontWeight: '600' },
   slotObs:   { color: '#6c7086', fontSize: 10, padding: 0, marginTop: 2 },
+  equipBtn:        { marginTop: 5, backgroundColor: '#1d3052', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start' },
+  equipBtnText:    { color: '#89b4fa', fontSize: 10, fontWeight: '700' },
+  equipRow:        { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
+  equipHandBtn:    { backgroundColor: '#1d3a2f', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 },
+  equipHandBtnText:{ color: '#a6e3a1', fontSize: 10, fontWeight: '700' },
+  equipCancelText: { color: '#45475a', fontSize: 13, paddingHorizontal: 4 },
 
   moedasTotal: {
     color: '#f9e2af', fontSize: 26, fontWeight: 'bold', letterSpacing: 1,

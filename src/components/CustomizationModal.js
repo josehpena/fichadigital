@@ -17,103 +17,112 @@ const SKILL_CATS = [
   { key: 'Mentais', color: '#89dceb' },
 ];
 
-export default function CustomizationModal({ visible, onClose }) {
+export default function CustomizationModal({ visible, onClose, isFirstSetup = false }) {
   const { character, dispatch } = useCharacter();
   const { statusOrder, xpCosts } = character.settings;
 
   const moveStatus = (key, dir) => dispatch({ type: 'MOVE_STATUS', key, direction: dir });
   const changeXp   = (key, d)   => dispatch({ type: 'CHANGE_XP_COST', key, delta: d * 5 });
 
+  const xpSection = (
+    <>
+      <Text style={[styles.sectionTitle, { marginTop: isFirstSetup ? 0 : 24 }]}>Custo XP por Atributo</Text>
+      <Text style={styles.sectionHint}>Custo para subir ao nível N = N × custo/nível</Text>
+      {ATTR_GROUPS.map(({ key, label, color }) => {
+        const cost = xpCosts[key] ?? 10;
+        return (
+          <View key={key} style={styles.costRow}>
+            <View style={[styles.costDot, { backgroundColor: color }]} />
+            <Text style={styles.costLabel}>{label}</Text>
+            <View style={styles.costControls}>
+              <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, -1)}>
+                <Text style={styles.costBtnText}>−5</Text>
+              </TouchableOpacity>
+              <Text style={styles.costValue}>{cost}</Text>
+              <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, +1)}>
+                <Text style={styles.costBtnText}>+5</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.xpTag}>XP/nível</Text>
+          </View>
+        );
+      })}
+
+      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Custo XP por Perícia</Text>
+      <Text style={styles.sectionHint}>Custo para subir ao nível N = N × custo/nível</Text>
+      {SKILL_CATS.map(({ key, color }) => {
+        const cost = xpCosts[key] ?? 5;
+        return (
+          <View key={key} style={styles.costRow}>
+            <View style={[styles.costDot, { backgroundColor: color }]} />
+            <Text style={styles.costLabel}>{key}</Text>
+            <View style={styles.costControls}>
+              <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, -1)}>
+                <Text style={styles.costBtnText}>−5</Text>
+              </TouchableOpacity>
+              <Text style={styles.costValue}>{cost}</Text>
+              <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, +1)}>
+                <Text style={styles.costBtnText}>+5</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.xpTag}>XP/nível</Text>
+          </View>
+        );
+      })}
+    </>
+  );
+
+  const statusSection = (
+    <>
+      <Text style={[styles.sectionTitle, { marginTop: isFirstSetup ? 24 : 0 }]}>Ordem dos Status</Text>
+      <Text style={styles.sectionHint}>Use ▲▼ para reordenar os cards na tela de status</Text>
+      {statusOrder.map((key, idx) => (
+        <View key={key} style={styles.orderRow}>
+          <View style={[styles.orderDot, { backgroundColor: STATUS_COLORS[key] }]} />
+          <Text style={styles.orderLabel}>{STATUS_LABELS[key]}</Text>
+          <View style={styles.arrowGroup}>
+            <TouchableOpacity
+              style={[styles.arrowBtn, idx === 0 && styles.arrowDisabled]}
+              onPress={() => moveStatus(key, 'up')}
+              disabled={idx === 0}
+            >
+              <Text style={[styles.arrowText, idx === 0 && styles.arrowTextDim]}>▲</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.arrowBtn, idx === statusOrder.length - 1 && styles.arrowDisabled]}
+              onPress={() => moveStatus(key, 'down')}
+              disabled={idx === statusOrder.length - 1}
+            >
+              <Text style={[styles.arrowText, idx === statusOrder.length - 1 && styles.arrowTextDim]}>▼</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ))}
+    </>
+  );
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-
-          {/* Header */}
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>✏️  Personalização</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>✏️  Personalização</Text>
+              {isFirstSetup && (
+                <Text style={styles.modalSubtitle}>Configure seu setup</Text>
+              )}
+            </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-            {/* ── Ordem dos Status ─────────────────────────────────── */}
-            <Text style={styles.sectionTitle}>Ordem dos Status</Text>
-            <Text style={styles.sectionHint}>Arraste com ▲▼ para reordenar os cards na tela de status</Text>
-
-            {statusOrder.map((key, idx) => (
-              <View key={key} style={styles.orderRow}>
-                <View style={[styles.orderDot, { backgroundColor: STATUS_COLORS[key] }]} />
-                <Text style={styles.orderLabel}>{STATUS_LABELS[key]}</Text>
-                <View style={styles.arrowGroup}>
-                  <TouchableOpacity
-                    style={[styles.arrowBtn, idx === 0 && styles.arrowDisabled]}
-                    onPress={() => moveStatus(key, 'up')}
-                    disabled={idx === 0}
-                  >
-                    <Text style={[styles.arrowText, idx === 0 && styles.arrowTextDim]}>▲</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.arrowBtn, idx === statusOrder.length - 1 && styles.arrowDisabled]}
-                    onPress={() => moveStatus(key, 'down')}
-                    disabled={idx === statusOrder.length - 1}
-                  >
-                    <Text style={[styles.arrowText, idx === statusOrder.length - 1 && styles.arrowTextDim]}>▼</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-
-            {/* ── Custo XP – Atributos ────────────────────────────── */}
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Custo XP por Atributo</Text>
-            <Text style={styles.sectionHint}>Custo para subir ao nível N = N × custo/nível</Text>
-
-            {ATTR_GROUPS.map(({ key, label, color }) => {
-              const cost = xpCosts[key] ?? 10;
-              return (
-                <View key={key} style={styles.costRow}>
-                  <View style={[styles.costDot, { backgroundColor: color }]} />
-                  <Text style={styles.costLabel}>{label}</Text>
-                  <View style={styles.costControls}>
-                    <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, -1)}>
-                      <Text style={styles.costBtnText}>−5</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.costValue}>{cost}</Text>
-                    <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, +1)}>
-                      <Text style={styles.costBtnText}>+5</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.xpTag}>XP/nível</Text>
-                </View>
-              );
-            })}
-
-            {/* ── Custo XP – Perícias ─────────────────────────────── */}
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Custo XP por Perícia</Text>
-            <Text style={styles.sectionHint}>Custo para subir ao nível N = N × custo/nível</Text>
-
-            {SKILL_CATS.map(({ key, color }) => {
-              const cost = xpCosts[key] ?? 5;
-              return (
-                <View key={key} style={styles.costRow}>
-                  <View style={[styles.costDot, { backgroundColor: color }]} />
-                  <Text style={styles.costLabel}>{key}</Text>
-                  <View style={styles.costControls}>
-                    <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, -1)}>
-                      <Text style={styles.costBtnText}>−5</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.costValue}>{cost}</Text>
-                    <TouchableOpacity style={styles.costBtn} onPress={() => changeXp(key, +1)}>
-                      <Text style={styles.costBtnText}>+5</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.xpTag}>XP/nível</Text>
-                </View>
-              );
-            })}
-
+            {isFirstSetup ? (
+              <>{xpSection}{statusSection}</>
+            ) : (
+              <>{statusSection}{xpSection}</>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -143,7 +152,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#2e2e4e',
   },
-  modalTitle: { color: '#cdd6f4', fontSize: 18, fontWeight: '700' },
+  modalTitle:    { color: '#cdd6f4', fontSize: 18, fontWeight: '700' },
+  modalSubtitle: { color: '#6c7086', fontSize: 12, marginTop: 2 },
   closeBtn: {
     width: 30, height: 30, borderRadius: 15,
     backgroundColor: '#313244', alignItems: 'center', justifyContent: 'center',

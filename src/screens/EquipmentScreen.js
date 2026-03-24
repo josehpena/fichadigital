@@ -23,6 +23,21 @@ function getWeaponsByCat() {
 }
 const WEAPONS_BY_CAT = getWeaponsByCat();
 
+// Lookup de nome de trilha pelo id
+function trailName(id) {
+  if (!id) return '';
+  for (const trails of Object.values(WEAPONS_BY_CAT)) {
+    const t = trails.find(t => t.id === id);
+    if (t) return t.nome;
+  }
+  return id;
+}
+
+// Verifica se um trail ID pertence à categoria MACHADOS
+function isMachadoId(id) {
+  return WEAPONS_BY_CAT['MACHADOS']?.some(t => t.id === id) ?? false;
+}
+
 const ATTR_SUB_KEYS = ['forca', 'destreza', 'vigor', 'manha', 'carisma', 'etiqueta', 'percepcao', 'raciocinio', 'inteligencia'];
 const SKILL_KEYS    = Object.keys(SKILL_LABELS);
 
@@ -169,11 +184,38 @@ function WeaponModal({ visible, slotKey, onClose }) {
 
   const setField = (field, value) =>
     dispatch({ type: 'SET_EQUIP_FIELD', slot: slotKey, field, value });
+  const changeDur = (delta) =>
+    dispatch({ type: 'CHANGE_WEAPON_DURABILITY', slot: slotKey, delta });
 
   function selectTrail(trail) {
-    setField('tipo', trail.id);
-    if (!equip.nome) setField('nome', trail.nome);
+    if (trail.categoria === 'MACHADOS') {
+      // Machado suporta dual-trail (Norte + Sul)
+      if (equip.tipo === trail.id) {
+        // Deseleciona primário → promove tipo2 se existir
+        setField('tipo', equip.tipo2 || '');
+        setField('tipo2', '');
+      } else if (equip.tipo2 === trail.id) {
+        setField('tipo2', '');
+      } else if (isMachadoId(equip.tipo)) {
+        // Já tem um machado como primário → adiciona como secundário
+        setField('tipo2', trail.id);
+      } else {
+        // Primeiro machado selecionado
+        setField('tipo', trail.id);
+        setField('tipo2', '');
+        if (!equip.nome) setField('nome', trail.nome);
+      }
+    } else {
+      setField('tipo', trail.id);
+      setField('tipo2', '');
+      if (!equip.nome) setField('nome', trail.nome);
+    }
   }
+
+  const dur    = equip.durabilidade ?? 10;
+  const durMax = equip.durabilidadeMax ?? 10;
+  const durPct = durMax > 0 ? dur / durMax : 0;
+  const broken = dur === 0;
 
   if (showTiras) {
     return (
@@ -192,26 +234,35 @@ function WeaponModal({ visible, slotKey, onClose }) {
         <ScrollView style={ms.sheet} contentContainerStyle={{ paddingBottom: 24 }}>
           <View style={ms.sheetHeader}>
             <Text style={ms.sheetTitle}>{EQUIP_LABELS[slotKey]}</Text>
+            {broken && <View style={ms.brokenBadge}><Text style={ms.brokenText}>QUEBRADA</Text></View>}
             <TouchableOpacity onPress={onClose}><Text style={ms.closeBtn}>✕</Text></TouchableOpacity>
           </View>
 
           {/* Tipo de arma — agrupado por categoria */}
           <Text style={ms.sectionLabel}>Tipo de Arma</Text>
+          {equip.tipo2 && (
+            <Text style={ms.dualTrailHint}>⚔ Dual: {trailName(equip.tipo)} + {trailName(equip.tipo2)}</Text>
+          )}
           {Object.entries(WEAPONS_BY_CAT).map(([cat, trails]) => (
             <View key={cat} style={ms.catGroup}>
-              <Text style={ms.catGroupLabel}>{cat}</Text>
+              <Text style={ms.catGroupLabel}>
+                {cat}{cat === 'MACHADOS' ? '  (toque 2× para dual)' : ''}
+              </Text>
               <View style={ms.catGroupRow}>
-                {trails.map(trail => (
-                  <TouchableOpacity
-                    key={trail.id}
-                    style={[ms.catChip, equip.tipo === trail.id && ms.catChipActive]}
-                    onPress={() => selectTrail(trail)}
-                  >
-                    <Text style={[ms.catChipText, equip.tipo === trail.id && ms.catChipTextActive]}>
-                      {trail.nome}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {trails.map(trail => {
+                  const isActive = equip.tipo === trail.id || equip.tipo2 === trail.id;
+                  return (
+                    <TouchableOpacity
+                      key={trail.id}
+                      style={[ms.catChip, isActive && ms.catChipActive]}
+                      onPress={() => selectTrail(trail)}
+                    >
+                      <Text style={[ms.catChipText, isActive && ms.catChipTextActive]}>
+                        {trail.nome}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           ))}
@@ -247,6 +298,23 @@ function WeaponModal({ visible, slotKey, onClose }) {
             placeholder="Ex: 1d8 + Força"
             placeholderTextColor="#45475a"
           />
+
+          {/* Durabilidade */}
+          <Text style={ms.sectionLabel}>Durabilidade</Text>
+          <View style={ms.durRow}>
+            <TouchableOpacity style={ms.numBtn} onPress={() => changeDur(-1)}><Text style={ms.numBtnTxt}>−</Text></TouchableOpacity>
+            <View style={ms.durBarWrap}>
+              <View style={[ms.durBar, { width: `${durPct * 100}%`, backgroundColor: broken ? '#f38ba8' : '#a6e3a1' }]} />
+            </View>
+            <Text style={ms.durVal}>{dur}/{durMax}</Text>
+            <TouchableOpacity style={ms.numBtn} onPress={() => changeDur(+1)}><Text style={ms.numBtnTxt}>+</Text></TouchableOpacity>
+          </View>
+          <View style={ms.durMaxRow}>
+            <Text style={ms.durMaxLabel}>Máximo:</Text>
+            <TouchableOpacity style={ms.numBtnSm} onPress={() => setField('durabilidadeMax', Math.max(1, durMax - 1))}><Text style={ms.numBtnTxt}>−</Text></TouchableOpacity>
+            <Text style={ms.durMaxVal}>{durMax}</Text>
+            <TouchableOpacity style={ms.numBtnSm} onPress={() => setField('durabilidadeMax', durMax + 1)}><Text style={ms.numBtnTxt}>+</Text></TouchableOpacity>
+          </View>
 
           {/* Efeitos */}
           <Text style={ms.sectionLabel}>Efeitos</Text>
@@ -418,27 +486,49 @@ function ArmorModal({ visible, slotKey, onClose }) {
 
 // ─── Card de arma (mão) ───────────────────────────────────────────────────────
 function HandSlotCard({ slotKey }) {
-  const { character } = useCharacter();
+  const { character, dispatch } = useCharacter();
   const equip = character.equipment[slotKey];
   const [open, setOpen] = useState(false);
 
+  const dur    = equip.durabilidade ?? 10;
+  const durMax = equip.durabilidadeMax ?? 10;
+  const durPct = durMax > 0 ? dur / durMax : 0;
+  const broken = dur === 0;
+
   return (
     <>
-      <TouchableOpacity style={[styles.card, styles.cardHand]} onPress={() => setOpen(true)} activeOpacity={0.8}>
+      <TouchableOpacity style={[styles.card, styles.cardHand, broken && styles.cardBroken]} onPress={() => setOpen(true)} activeOpacity={0.8}>
         <View style={styles.cardRow}>
-          <Text style={styles.slotName}>{EQUIP_LABELS[slotKey]}</Text>
-          {equip.tipo ? <Text style={styles.typeBadge}>{equip.tipo}</Text> : null}
-          {equip.nivel > 1 && <Text style={styles.levelBadge}>Nv {equip.nivel}</Text>}
+          <Text style={[styles.slotName, broken && styles.textDim]}>{EQUIP_LABELS[slotKey]}</Text>
+          {broken && <View style={styles.brokenBadge}><Text style={styles.brokenText}>QUEBRADA</Text></View>}
+          {equip.tipo  ? <Text style={styles.typeBadge}>{trailName(equip.tipo)}</Text>  : null}
+          {equip.tipo2 ? <Text style={styles.typeBadge}>{trailName(equip.tipo2)}</Text> : null}
+          {(equip.nivel ?? 1) > 1 && <Text style={styles.levelBadge}>Nv {equip.nivel}</Text>}
           <Text style={styles.editHint}>✏️</Text>
         </View>
         {equip.nome ? (
-          <Text style={styles.equipName}>{equip.nome}</Text>
+          <Text style={[styles.equipName, broken && styles.textDim]}>{equip.nome}</Text>
         ) : (
           <Text style={styles.emptyHint}>Toque para configurar…</Text>
         )}
         {equip.dano ? <Text style={styles.equipStat}>⚔️ {equip.dano}</Text> : null}
+        {equip.nome && (
+          <View style={styles.durBarWrapSm}>
+            <View style={[styles.durBarSm, { width: `${durPct * 100}%`, backgroundColor: broken ? '#f38ba8' : '#a6e3a1' }]} />
+          </View>
+        )}
+        {equip.nome && <Text style={styles.durValSm}>{dur}/{durMax}</Text>}
         {(equip.tiras?.length ?? 0) > 0 && (
           <Text style={styles.tirasCount}>🪢 {equip.tiras.length} tira{equip.tiras.length > 1 ? 's' : ''}</Text>
+        )}
+        {equip.nome && (
+          <TouchableOpacity
+            style={styles.unequipBtn}
+            onPress={() => dispatch({ type: 'UNEQUIP_TO_INVENTORY', slot: slotKey })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.unequipBtnText}>→ Inventário</Text>
+          </TouchableOpacity>
         )}
       </TouchableOpacity>
       <WeaponModal visible={open} slotKey={slotKey} onClose={() => setOpen(false)} />
@@ -590,11 +680,15 @@ function NumField({ label, value, onChange }) {
 
 // ─── Tela principal ───────────────────────────────────────────────────────────
 export default function EquipmentScreen() {
-  const { character } = useCharacter();
-  const { totalArmadura, totalResMagica } = computeDefenseTotals(
+  const { character, dispatch } = useCharacter();
+  const { totalArmadura, totalResMagica, totalReputacao } = computeDefenseTotals(
     character.equipment,
     character.accessories
   );
+  const reputacaoBase =
+    character.attributes.reputacao.manha +
+    character.attributes.reputacao.carisma +
+    character.attributes.reputacao.etiqueta;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -602,13 +696,21 @@ export default function EquipmentScreen() {
       <View style={styles.totalsRow}>
         <View style={styles.totalBadge}>
           <Text style={styles.totalIcon}>🛡️</Text>
-          <Text style={styles.totalLabel}>Armadura Total</Text>
+          <Text style={styles.totalLabel}>Armadura</Text>
           <Text style={styles.totalValue}>{totalArmadura}</Text>
         </View>
         <View style={styles.totalBadge}>
           <Text style={styles.totalIcon}>✨</Text>
-          <Text style={styles.totalLabel}>Res. Mágica Total</Text>
+          <Text style={styles.totalLabel}>Res. Mágica</Text>
           <Text style={styles.totalValue}>{totalResMagica}</Text>
+        </View>
+        <View style={styles.totalBadge}>
+          <Text style={styles.totalIcon}>🎭</Text>
+          <Text style={styles.totalLabel}>Reputação</Text>
+          <Text style={styles.totalValue}>{reputacaoBase + totalReputacao}</Text>
+          {totalReputacao > 0 && (
+            <Text style={styles.totalBonus}>+{totalReputacao} equip.</Text>
+          )}
         </View>
       </View>
 
@@ -616,6 +718,16 @@ export default function EquipmentScreen() {
       {HAND_SLOTS.map(k => <HandSlotCard key={k} slotKey={k} />)}
 
       <Text style={styles.sectionTitle}>Armadura</Text>
+      {/* Controle global de durabilidade */}
+      <View style={styles.globalDurRow}>
+        <Text style={styles.globalDurLabel}>Durabilidade de todas:</Text>
+        <TouchableOpacity style={styles.globalDurBtn} onPress={() => dispatch({ type: 'CHANGE_ALL_ARMOR_DURABILITY', delta: -1 })}>
+          <Text style={styles.globalDurBtnText}>−1</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.globalDurBtn} onPress={() => dispatch({ type: 'CHANGE_ALL_ARMOR_DURABILITY', delta: +1 })}>
+          <Text style={styles.globalDurBtnText}>+1</Text>
+        </TouchableOpacity>
+      </View>
       {ARMOR_SLOTS.map(k => <ArmorSlotCard key={k} slotKey={k} />)}
 
       <Text style={styles.sectionTitle}>Acessórios</Text>
@@ -635,14 +747,23 @@ const styles = StyleSheet.create({
     marginBottom: 10, marginTop: 6,
   },
 
-  totalsRow:  { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  totalsRow:  { flexDirection: 'row', gap: 8, marginBottom: 16 },
   totalBadge: {
     flex: 1, backgroundColor: '#1e1e2e', borderRadius: 10,
-    padding: 10, alignItems: 'center', borderWidth: 1, borderColor: '#2e2e4e',
+    padding: 8, alignItems: 'center', borderWidth: 1, borderColor: '#2e2e4e',
   },
-  totalIcon:  { fontSize: 18, marginBottom: 2 },
-  totalLabel: { color: '#6c7086', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  totalValue: { color: '#cdd6f4', fontSize: 24, fontWeight: 'bold' },
+  totalIcon:  { fontSize: 16, marginBottom: 2 },
+  totalLabel: { color: '#6c7086', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
+  totalValue: { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
+  totalBonus: { color: '#a6e3a1', fontSize: 9, marginTop: 1 },
+
+  globalDurRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  globalDurLabel: { color: '#6c7086', fontSize: 12, flex: 1 },
+  globalDurBtn: { backgroundColor: '#313244', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  globalDurBtnText: { color: '#cdd6f4', fontSize: 13, fontWeight: '700' },
+
+  unequipBtn: { marginTop: 6, alignSelf: 'flex-start', backgroundColor: '#1d3a2f', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  unequipBtnText: { color: '#a6e3a1', fontSize: 11, fontWeight: '600' },
 
   card: {
     backgroundColor: '#1e1e2e', borderRadius: 12,
@@ -756,6 +877,7 @@ const ms = StyleSheet.create({
   catGroup:      { marginBottom: 8 },
   catGroupLabel: { color: '#45475a', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
   catGroupRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  dualTrailHint: { color: '#f9e2af', fontSize: 12, marginBottom: 8, fontStyle: 'italic' },
 
   catPicker: { flexDirection: 'row', marginBottom: 2 },
   catChip:   {
