@@ -8,7 +8,7 @@ import {
 import { TITLE_BY_ID } from '../data/titlesData';
 
 const QUICK_DELTAS    = [-5, -1, +1, +5];
-const XP_QUICK_DELTAS = [+10, +25, +50, +100];
+const XP_QUICK_DELTAS = [-100, -10, +10, +25, +50, +100];
 const COUNTER_TIMEOUT = 5000;
 
 // Quais sub-atributos contribuem para cada status calculado

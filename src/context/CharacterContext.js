@@ -5,6 +5,7 @@ import {
   COMPUTED_STATUS_KEYS,
   computeMaxValues,
   SKILL_CATEGORIES,
+  ARMOR_SLOTS,
   xpCostForRange,
 } from '../data/initialCharacter';
 import { findTrail, findCategoryTrails } from '../data/trailsData';
@@ -211,6 +212,58 @@ function reducer(state, action) {
           ...state.equipment,
           [action.slot]: { ...slot, durabilidade: newDur },
         },
+      };
+    }
+
+    // { slot, delta }  — altera durabilidade de uma arma (hand slot)
+    case 'CHANGE_WEAPON_DURABILITY': {
+      const slot = state.equipment[action.slot];
+      const newDur = Math.max(0, Math.min((slot.durabilidade ?? 10) + action.delta, slot.durabilidadeMax ?? 10));
+      return {
+        ...state,
+        equipment: { ...state.equipment, [action.slot]: { ...slot, durabilidade: newDur } },
+      };
+    }
+
+    // { delta }  — altera durabilidade de todas as armaduras ao mesmo tempo
+    case 'CHANGE_ALL_ARMOR_DURABILITY': {
+      const newEquipment = { ...state.equipment };
+      for (const k of ARMOR_SLOTS) {
+        const sl = newEquipment[k];
+        newEquipment[k] = { ...sl, durabilidade: Math.max(0, Math.min(sl.durabilidade + action.delta, sl.durabilidadeMax)) };
+      }
+      return { ...state, equipment: newEquipment };
+    }
+
+    // { section: 'bolsa'|'cinto', index, slot: 'maoDireita'|'maoEsquerda' }
+    case 'EQUIP_FROM_INVENTORY': {
+      const inv = state.inventory[action.section];
+      const item = inv.itens[action.index];
+      if (!item?.nome) return state;
+      const newItens = [...inv.itens];
+      newItens[action.index] = { nome: '', obs: '' };
+      const handSlot = state.equipment[action.slot];
+      return {
+        ...state,
+        inventory: { ...state.inventory, [action.section]: { ...inv, itens: newItens } },
+        equipment: { ...state.equipment, [action.slot]: { ...handSlot, nome: item.nome } },
+      };
+    }
+
+    // { slot: 'maoDireita'|'maoEsquerda' }  — move arma de volta para a bolsa
+    case 'UNEQUIP_TO_INVENTORY': {
+      const handSlot = state.equipment[action.slot];
+      if (!handSlot?.nome) return state;
+      const bolsa = state.inventory.bolsa;
+      const emptyIdx = bolsa.itens.findIndex((it, i) => !it.nome && i < bolsa.capacidade);
+      if (emptyIdx === -1) return state; // bolsa cheia
+      const newItens = [...bolsa.itens];
+      newItens[emptyIdx] = { nome: handSlot.nome, obs: '' };
+      const emptyHand = { ...handSlot, nome: '', tipo: '', tipo2: '', dano: '', efeitos: '' };
+      return {
+        ...state,
+        inventory: { ...state.inventory, bolsa: { ...bolsa, itens: newItens } },
+        equipment: { ...state.equipment, [action.slot]: emptyHand },
       };
     }
 
@@ -481,20 +534,22 @@ function reducer(state, action) {
   }
 }
 
-export function CharacterProvider({ children }) {
+export function CharacterProvider({ children, sheetId }) {
+  const storageKey = sheetId ? `@fichadigital_v2_${sheetId}` : STORAGE_KEY;
   const [character, dispatch] = useReducer(reducer, INITIAL_CHARACTER);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+    AsyncStorage.getItem(storageKey).then((raw) => {
       if (raw) {
         try { dispatch({ type: 'LOAD', payload: JSON.parse(raw) }); } catch (_) {}
       }
     });
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
 
   useEffect(() => {
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(character));
-  }, [character]);
+    AsyncStorage.setItem(storageKey, JSON.stringify(character));
+  }, [character, storageKey]);
 
   return (
     <CharacterContext.Provider value={{ character, dispatch }}>
