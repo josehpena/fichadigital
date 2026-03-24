@@ -49,17 +49,26 @@ function computeTitleSkillBonuses(skillBonuses = [], skills = {}) {
   return result;
 }
 
-// Mescla bônus de títulos, narrativos e skill-based
-function totalStatusBonuses(titleBonuses = {}, narrativeEffects = [], skillBonuses = [], skills = {}) {
-  const narrative = computeNarrativeBonuses(narrativeEffects);
+// Bônus condicionais por atributo atingir um threshold (ex: Encouraçado)
+function computeTitleAttrBonuses(attrBonuses = [], attrs = {}) {
+  const result = {};
+  for (const { status, group, subAttr, threshold, delta } of attrBonuses) {
+    if ((attrs[group]?.[subAttr] ?? 0) >= threshold) {
+      result[status] = (result[status] || 0) + delta;
+    }
+  }
+  return result;
+}
+
+// Mescla bônus de títulos, narrativos, skill-based e attr-based
+function totalStatusBonuses(titleBonuses = {}, narrativeEffects = [], skillBonuses = [], skills = {}, attrBonuses = [], attrs = {}) {
+  const narrative  = computeNarrativeBonuses(narrativeEffects);
   const skillDelta = computeTitleSkillBonuses(skillBonuses, skills);
+  const attrDelta  = computeTitleAttrBonuses(attrBonuses, attrs);
   const merged = { ...titleBonuses };
-  for (const [k, v] of Object.entries(narrative)) {
-    merged[k] = (merged[k] || 0) + v;
-  }
-  for (const [k, v] of Object.entries(skillDelta)) {
-    merged[k] = (merged[k] || 0) + v;
-  }
+  for (const [k, v] of Object.entries(narrative))  merged[k] = (merged[k] || 0) + v;
+  for (const [k, v] of Object.entries(skillDelta)) merged[k] = (merged[k] || 0) + v;
+  for (const [k, v] of Object.entries(attrDelta))  merged[k] = (merged[k] || 0) + v;
   return merged;
 }
 
@@ -84,7 +93,7 @@ function reducer(state, action) {
       if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
       const status = applyComputedMaxes(
         p.status, p.attributes,
-        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [], p.titles?.skillBonuses ?? [], p.skills ?? {})
+        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [], p.titles?.skillBonuses ?? [], p.skills ?? {}, p.titles?.attrBonuses ?? [], p.attributes ?? {})
       );
       // Mescla settings: preserva customizações salvas, garante campos novos
       const savedSettings = p.settings ?? {};
@@ -94,14 +103,31 @@ function reducer(state, action) {
         xpCosts: { ...INITIAL_CHARACTER.settings.xpCosts, ...(savedSettings.xpCosts ?? {}) },
         statusOrder: savedSettings.statusOrder ?? INITIAL_CHARACTER.settings.statusOrder,
       };
+      // Migração: garante array de acessórios com slots suficientes (min 11)
+      const emptyAcc = () => ({ nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '', tiras: [] });
+      const loadedAcc = p.accessories ?? INITIAL_CHARACTER.accessories;
+      const accessories = loadedAcc.length >= 11
+        ? loadedAcc
+        : [...loadedAcc, ...Array.from({ length: 11 - loadedAcc.length }, emptyAcc)];
+
+      // Migração: preserva skillBonuses e attrBonuses vindos do save
+      const titles = p.titles
+        ? {
+            ...INITIAL_CHARACTER.titles,
+            ...p.titles,
+            skillBonuses: p.titles.skillBonuses ?? [],
+            attrBonuses:  p.titles.attrBonuses  ?? [],
+          }
+        : INITIAL_CHARACTER.titles;
+
       return {
         ...INITIAL_CHARACTER,
         ...p,
         status,
         equipment:        p.equipment        ?? INITIAL_CHARACTER.equipment,
-        accessories:      p.accessories      ?? INITIAL_CHARACTER.accessories,
+        accessories,
         skillTree:        p.skillTree        ?? INITIAL_CHARACTER.skillTree,
-        titles:           p.titles           ?? INITIAL_CHARACTER.titles,
+        titles,
         inventory:        p.inventory        ?? INITIAL_CHARACTER.inventory,
         narrativeEffects: p.narrativeEffects ?? INITIAL_CHARACTER.narrativeEffects,
         settings,
@@ -149,7 +175,7 @@ function reducer(state, action) {
       };
       const newStatus = applyComputedMaxes(
         state.status, newAttrs,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], state.titles?.skillBonuses ?? [], state.skills ?? {})
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], newAttrs)
       );
 
       if (newVal > curVal) {
@@ -173,7 +199,7 @@ function reducer(state, action) {
       const affectsMax = skillBonuses.some(b => b.skill === action.skill);
       const newStatus = affectsMax
         ? applyComputedMaxes(state.status, state.attributes,
-            totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], skillBonuses, newSkills))
+            totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], skillBonuses, newSkills, state.titles?.attrBonuses ?? [], state.attributes))
         : state.status;
 
       if (newVal > curVal) {
@@ -357,7 +383,7 @@ function reducer(state, action) {
       const newEffects = [...(state.narrativeEffects ?? []), action.effect];
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {})
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], state.attributes)
       );
       // Aumenta current para bônus positivos de status
       for (const linha of action.effect.linhas ?? []) {
@@ -374,7 +400,7 @@ function reducer(state, action) {
       const newEffects = (state.narrativeEffects ?? []).filter((_, i) => i !== action.index);
       const newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {})
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], state.attributes)
       );
       return { ...state, narrativeEffects: newEffects, status: newStatus };
     }
@@ -525,12 +551,13 @@ function reducer(state, action) {
         newBonuses[ef.status] = (newBonuses[ef.status] || 0) + ef.delta;
       }
 
-      // Acumula skill-based bonuses do título
+      // Acumula skill-based e attr-based bonuses do título
       const newSkillBonuses = [...(state.titles?.skillBonuses ?? []), ...(title.skillEfeitos ?? [])];
+      const newAttrBonuses  = [...(state.titles?.attrBonuses  ?? []), ...(title.attrEfeitos  ?? [])];
 
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [], newSkillBonuses, state.skills ?? {})
+        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [], newSkillBonuses, state.skills ?? {}, newAttrBonuses, state.attributes)
       );
       // Aumenta o current proporcional ao bônus positivo (estático)
       for (const ef of title.efeitos ?? []) {
@@ -543,6 +570,13 @@ function reducer(state, action) {
       for (const { status, skill } of title.skillEfeitos ?? []) {
         const delta = state.skills?.[skill] ?? 0;
         if (delta > 0 && COMPUTED_STATUS_KEYS.includes(status)) {
+          const s = newStatus[status];
+          newStatus = { ...newStatus, [status]: { ...s, current: Math.min(s.current + delta, s.max) } };
+        }
+      }
+      // Aumenta o current para bônus de attr já atendidos
+      for (const { status, group, subAttr, threshold, delta } of title.attrEfeitos ?? []) {
+        if ((state.attributes[group]?.[subAttr] ?? 0) >= threshold && COMPUTED_STATUS_KEYS.includes(status)) {
           const s = newStatus[status];
           newStatus = { ...newStatus, [status]: { ...s, current: Math.min(s.current + delta, s.max) } };
         }
@@ -560,6 +594,7 @@ function reducer(state, action) {
           acquired: [...acquired, action.titleId],
           statusBonuses: newBonuses,
           skillBonuses: newSkillBonuses,
+          attrBonuses: newAttrBonuses,
           bindings: newBindings,
         },
       };

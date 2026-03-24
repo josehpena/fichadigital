@@ -108,6 +108,11 @@ const CATEGORIAS_RAW = [
             beneficios: ['Não sofre deslocamento ou queda causados por MAGIA ou habilidades/ações FÍSICAS. Soma ESPORTES na capacidade máxima de ENERGIA', 'Ativo: Soma ROBUSTEZ nas ações de bloqueio, porém perde chance de mover-se no turno'],
             requisitos: ['VIGOR 4 e 2 habilidades de escudo lvl 2', 'Recruta'] },
           { id: 'encouracado', nome: 'Encouraçado', ordem: 3,
+            attrEfeitos: [
+              { status: 'vida', group: 'robustez', subAttr: 'forca',    threshold: 5, delta: 10 },
+              { status: 'vida', group: 'robustez', subAttr: 'destreza', threshold: 5, delta: 10 },
+              { status: 'vida', group: 'robustez', subAttr: 'vigor',    threshold: 5, delta: 10 },
+            ],
             beneficios: ['Ganha +10 de VIDA MÁXIMA para cada atributo FÍSICO lvl 5', 'Ativo: Soma sua ARMADURA no bloqueio desse turno'],
             requisitos: ['2 habilidades de escudo lvl 3', 'Defensor'] },
           { id: 'patrulheiro', nome: 'Patrulheiro', ordem: 2,

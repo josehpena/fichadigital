@@ -389,7 +389,7 @@ function getAcquiredMagicSpells(acquiredTrails) {
 }
 
 // ─── Painel de Ataque ─────────────────────────────────────────────────────────
-function AttackPanel({ actionsLeft, onConfirm }) {
+function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
   const { character, dispatch } = useCharacter();
   const { attributes: attrs, skills } = character;
   const forca        = attrs?.robustez?.forca    ?? 0;
@@ -401,6 +401,7 @@ function AttackPanel({ actionsLeft, onConfirm }) {
   const acquiredTitles = character.titles?.acquired ?? [];
   const hasBarbaro = acquiredTitles.includes('barbaro');
   const hasAlgoz   = acquiredTitles.includes('algoz');
+  const hasSoldado = acquiredTitles.includes('soldado');
   const vidaAtual  = character.status?.vida?.current ?? 0;
   const vidaMax    = character.status?.vida?.max     ?? 0;
   const vidaPerdida = Math.max(0, vidaMax - vidaAtual);
@@ -485,6 +486,11 @@ function AttackPanel({ actionsLeft, onConfirm }) {
   if (formula && twoHand && hasAlgoz && vidaPerdida > 0) {
     formula.partes.push({ label: `Vida perdida (Algoz)`, val: vidaPerdida });
     formula.total += vidaPerdida;
+  }
+  // Título Soldado: soma Armas Brancas ao dano se bloqueou neste turno
+  if (formula && !ranged && hasSoldado && blockedThisTurn && armasBrancas > 0) {
+    formula.partes.push({ label: `Armas Brancas (Soldado)`, val: armasBrancas });
+    formula.total += armasBrancas;
   }
 
   // Energia total = 1 (ataque) + soma dos níveis selecionados de habilidades
@@ -728,7 +734,7 @@ function SkillLevelPicker({ sk, selLv, onChange }) {
   );
 }
 
-function DefendPanel({ actionsLeft, onConfirm }) {
+function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   const { character, dispatch } = useCharacter();
   const { skills } = character;
   const reflexo  = skills?.reflexo  ?? 0;
@@ -762,6 +768,7 @@ function DefendPanel({ actionsLeft, onConfirm }) {
   function confirm() {
     if (!podeDefender) return;
     if (energyCost > 0) dispatch({ type: 'CHANGE_STATUS', statusKey: 'energia', field: 'current', delta: -energyCost });
+    if (mode === 'bloquear') onBlock?.();
     onConfirm();
     setBlockLevels({});
   }
@@ -1069,9 +1076,10 @@ const TABS = ['Atacar', 'Defender', 'Magia', 'Reações'];
 
 export default function TurnAssistantScreen() {
   const { character } = useCharacter();
-  const [tab, setTab]         = useState('Atacar');
-  const [actions, setActions] = useState(2);
-  const [turn, setTurn]       = useState(1);
+  const [tab, setTab]                   = useState('Atacar');
+  const [actions, setActions]           = useState(2);
+  const [turn, setTurn]                 = useState(1);
+  const [blockedThisTurn, setBlockedThisTurn] = useState(false);
 
   const manaAtual    = character.status?.mana?.current    ?? 0;
   const energiaAtual = character.status?.energia?.current ?? 0;
@@ -1083,11 +1091,13 @@ export default function TurnAssistantScreen() {
   function nextTurn() {
     setActions(2);
     setTurn(t => t + 1);
+    setBlockedThisTurn(false);
   }
 
   function resetCombat() {
     setActions(2);
     setTurn(1);
+    setBlockedThisTurn(false);
   }
 
   return (
@@ -1138,8 +1148,8 @@ export default function TurnAssistantScreen() {
       </View>
 
       <ScrollView style={s.body} contentContainerStyle={s.bodyContent}>
-        {tab === 'Atacar'  && <AttackPanel  actionsLeft={actions} onConfirm={spendAction} />}
-        {tab === 'Defender' && <DefendPanel  actionsLeft={actions} onConfirm={spendAction} />}
+        {tab === 'Atacar'  && <AttackPanel  actionsLeft={actions} onConfirm={spendAction} blockedThisTurn={blockedThisTurn} />}
+        {tab === 'Defender' && <DefendPanel  actionsLeft={actions} onConfirm={spendAction} onBlock={() => setBlockedThisTurn(true)} />}
         {tab === 'Magia'   && <MagicPanel   actionsLeft={actions} onConfirm={spendAction} />}
         {tab === 'Reações' && <ReactionsPanel />}
       </ScrollView>

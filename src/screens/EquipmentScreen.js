@@ -731,7 +731,9 @@ export default function EquipmentScreen() {
       {ARMOR_SLOTS.map(k => <ArmorSlotCard key={k} slotKey={k} />)}
 
       <Text style={styles.sectionTitle}>Acessórios</Text>
-      {character.accessories.map((_, i) => <AccessoryCard key={i} index={i} />)}
+      {character.accessories
+        .slice(0, character.titles?.acquired?.includes('recruta') ? 11 : 10)
+        .map((_, i) => <AccessoryCard key={i} index={i} />)}
     </ScrollView>
   );
 }
