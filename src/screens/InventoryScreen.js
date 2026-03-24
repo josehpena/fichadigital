@@ -27,13 +27,22 @@ function ItemSlot({ index, item, section, placeholder }) {
       />
       {!isEmpty && (
         <>
-          <TextInput
-            style={styles.slotObs}
-            value={item.obs}
-            placeholder="obs..."
-            placeholderTextColor="#313244"
-            onChangeText={v => dispatch({ type: 'INVENTORY_SET_ITEM', section, index, field: 'obs', value: v })}
-          />
+          {/* Indicador de arma guardada (com tiras/nível preservados) */}
+          {item.weaponData && (
+            <Text style={styles.weaponTag}>
+              ⚔{item.weaponData.nivel > 1 ? ` Nv ${item.weaponData.nivel}` : ''}
+              {item.weaponData.tiras?.length > 0 ? `  🪢 ${item.weaponData.tiras.length}` : ''}
+            </Text>
+          )}
+          {!item.weaponData && (
+            <TextInput
+              style={styles.slotObs}
+              value={item.obs}
+              placeholder="obs..."
+              placeholderTextColor="#313244"
+              onChangeText={v => dispatch({ type: 'INVENTORY_SET_ITEM', section, index, field: 'obs', value: v })}
+            />
+          )}
           {showEquip ? (
             <View style={styles.equipRow}>
               <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipTo('maoDireita')}>
@@ -180,6 +189,7 @@ const styles = StyleSheet.create({
   slotEmpty: { borderStyle: 'dashed', borderColor: '#2e2e4e' },
   slotInput: { color: '#cdd6f4', fontSize: 13, padding: 0, fontWeight: '600' },
   slotObs:   { color: '#6c7086', fontSize: 10, padding: 0, marginTop: 2 },
+  weaponTag:       { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2, marginBottom: 2 },
   equipBtn:        { marginTop: 5, backgroundColor: '#1d3052', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start' },
   equipBtnText:    { color: '#89b4fa', fontSize: 10, fontWeight: '700' },
   equipRow:        { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },

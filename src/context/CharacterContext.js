@@ -243,14 +243,18 @@ function reducer(state, action) {
       const newItens = [...inv.itens];
       newItens[action.index] = { nome: '', obs: '' };
       const handSlot = state.equipment[action.slot];
+      // Restaura tiras, nível e dados completos se o item carrega weaponData
+      const newHandSlot = item.weaponData
+        ? { ...handSlot, nome: item.nome, ...item.weaponData }
+        : { ...handSlot, nome: item.nome };
       return {
         ...state,
         inventory: { ...state.inventory, [action.section]: { ...inv, itens: newItens } },
-        equipment: { ...state.equipment, [action.slot]: { ...handSlot, nome: item.nome } },
+        equipment: { ...state.equipment, [action.slot]: newHandSlot },
       };
     }
 
-    // { slot: 'maoDireita'|'maoEsquerda' }  — move arma de volta para a bolsa
+    // { slot: 'maoDireita'|'maoEsquerda' }  — move arma para bolsa preservando tiras e nível
     case 'UNEQUIP_TO_INVENTORY': {
       const handSlot = state.equipment[action.slot];
       if (!handSlot?.nome) return state;
@@ -258,8 +262,22 @@ function reducer(state, action) {
       const emptyIdx = bolsa.itens.findIndex((it, i) => !it.nome && i < bolsa.capacidade);
       if (emptyIdx === -1) return state; // bolsa cheia
       const newItens = [...bolsa.itens];
-      newItens[emptyIdx] = { nome: handSlot.nome, obs: '' };
-      const emptyHand = { ...handSlot, nome: '', tipo: '', tipo2: '', dano: '', efeitos: '' };
+      // Guarda todos os dados da arma no item de inventário
+      newItens[emptyIdx] = {
+        nome: handSlot.nome,
+        obs: '',
+        weaponData: {
+          tipo:            handSlot.tipo            ?? '',
+          tipo2:           handSlot.tipo2           ?? '',
+          dano:            handSlot.dano            ?? '',
+          efeitos:         handSlot.efeitos         ?? '',
+          nivel:           handSlot.nivel           ?? 1,
+          tiras:           handSlot.tiras           ?? [],
+          durabilidade:    handSlot.durabilidade    ?? 10,
+          durabilidadeMax: handSlot.durabilidadeMax ?? 10,
+        },
+      };
+      const emptyHand = { tipo: '', tipo2: '', nome: '', dano: '', efeitos: '', nivel: 1, tiras: [], durabilidade: 10, durabilidadeMax: 10 };
       return {
         ...state,
         inventory: { ...state.inventory, bolsa: { ...bolsa, itens: newItens } },
