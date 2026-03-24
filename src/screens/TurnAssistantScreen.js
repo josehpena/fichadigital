@@ -472,7 +472,8 @@ function AttackPanel({ actionsLeft, onConfirm }) {
   const skillEnergyCost = Object.values(skillLevels).reduce((acc, lv) => acc + lv, 0);
   const totalEnergy = 1 + skillEnergyCost;
   const energiaAtual = character.status?.energia?.current ?? 0;
-  const podeAtacar = !!weapon && actionsLeft >= 1 && energiaAtual >= totalEnergy;
+  const actionCost = twoHand ? 2 : 1;
+  const podeAtacar = !!weapon && actionsLeft >= actionCost && energiaAtual >= totalEnergy;
 
   function setSkillLevel(skillId, lv) {
     setSkillLevels(prev => ({ ...prev, [skillId]: lv }));
@@ -482,6 +483,7 @@ function AttackPanel({ actionsLeft, onConfirm }) {
     if (!podeAtacar) return;
     dispatch({ type: 'CHANGE_STATUS', statusKey: 'energia', field: 'current', delta: -totalEnergy });
     onConfirm();
+    if (twoHand) onConfirm(); // 2ª ação gasta
     setSkillLevels({});
   }
 
@@ -670,7 +672,7 @@ function AttackPanel({ actionsLeft, onConfirm }) {
         onPress={confirm}
         disabled={!podeAtacar}
       >
-        <Text style={s.confirmBtnText}>Confirmar Ataque  −1 Ação  −{totalEnergy} Energia</Text>
+        <Text style={s.confirmBtnText}>Confirmar Ataque  −{actionCost} {actionCost === 2 ? 'Ações' : 'Ação'}  −{totalEnergy} Energia</Text>
       </TouchableOpacity>
     </View>
   );
