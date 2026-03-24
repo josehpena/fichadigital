@@ -78,7 +78,7 @@ export const INITIAL_CHARACTER = {
     maoEsquerda: emptyHandSlot(),
   },
 
-  accessories: Array.from({ length: 10 }, emptyAccessory),
+  accessories: Array.from({ length: 11 }, emptyAccessory),
 
   narrativeEffects: [],
   // [{ nome: string, linhas: [{ tipo: 'status', statusKey, delta } | { tipo: 'texto', texto }] }]
@@ -92,6 +92,8 @@ export const INITIAL_CHARACTER = {
   titles: {
     acquired: [],       // [titleId, ...]
     statusBonuses: {},  // { vida: 10, ... } — soma dos efeitos dos títulos adquiridos
+    skillBonuses: [],   // [{ status, skill }] — bônus de max que escalam com valor de perícia
+    attrBonuses: [],    // [{ status, group, subAttr, threshold, delta }] — bônus condicionais por atributo
     bindings: {},       // { titleId: [{trailId, skillId, nome}] } — habilidades vinculadas
   },
 
@@ -105,6 +107,7 @@ export const INITIAL_CHARACTER = {
       ativo: false,
       itens: Array.from({ length: 10 }, () => ({ nome: '', obs: '' })),
     },
+    storages: [], // armazenamentos customizados: [{ id, nome, icone, capacidade, itens }]
   },
 
   settings: {

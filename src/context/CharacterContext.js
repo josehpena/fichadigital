@@ -40,13 +40,35 @@ function computeNarrativeBonuses(narrativeEffects = []) {
   return result;
 }
 
-// Mescla bônus de títulos com bônus narrativos
-function totalStatusBonuses(titleBonuses = {}, narrativeEffects = []) {
-  const narrative = computeNarrativeBonuses(narrativeEffects);
-  const merged = { ...titleBonuses };
-  for (const [k, v] of Object.entries(narrative)) {
-    merged[k] = (merged[k] || 0) + v;
+// Bônus de max que escalam com o valor atual de uma perícia
+function computeTitleSkillBonuses(skillBonuses = [], skills = {}) {
+  const result = {};
+  for (const { status, skill } of skillBonuses) {
+    result[status] = (result[status] || 0) + (skills[skill] || 0);
   }
+  return result;
+}
+
+// Bônus condicionais por atributo atingir um threshold (ex: Encouraçado)
+function computeTitleAttrBonuses(attrBonuses = [], attrs = {}) {
+  const result = {};
+  for (const { status, group, subAttr, threshold, delta } of attrBonuses) {
+    if ((attrs[group]?.[subAttr] ?? 0) >= threshold) {
+      result[status] = (result[status] || 0) + delta;
+    }
+  }
+  return result;
+}
+
+// Mescla bônus de títulos, narrativos, skill-based e attr-based
+function totalStatusBonuses(titleBonuses = {}, narrativeEffects = [], skillBonuses = [], skills = {}, attrBonuses = [], attrs = {}) {
+  const narrative  = computeNarrativeBonuses(narrativeEffects);
+  const skillDelta = computeTitleSkillBonuses(skillBonuses, skills);
+  const attrDelta  = computeTitleAttrBonuses(attrBonuses, attrs);
+  const merged = { ...titleBonuses };
+  for (const [k, v] of Object.entries(narrative))  merged[k] = (merged[k] || 0) + v;
+  for (const [k, v] of Object.entries(skillDelta)) merged[k] = (merged[k] || 0) + v;
+  for (const [k, v] of Object.entries(attrDelta))  merged[k] = (merged[k] || 0) + v;
   return merged;
 }
 
@@ -71,7 +93,7 @@ function reducer(state, action) {
       if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
       const status = applyComputedMaxes(
         p.status, p.attributes,
-        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [])
+        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [], p.titles?.skillBonuses ?? [], p.skills ?? {}, p.titles?.attrBonuses ?? [], p.attributes ?? {})
       );
       // Mescla settings: preserva customizações salvas, garante campos novos
       const savedSettings = p.settings ?? {};
@@ -81,14 +103,31 @@ function reducer(state, action) {
         xpCosts: { ...INITIAL_CHARACTER.settings.xpCosts, ...(savedSettings.xpCosts ?? {}) },
         statusOrder: savedSettings.statusOrder ?? INITIAL_CHARACTER.settings.statusOrder,
       };
+      // Migração: garante array de acessórios com slots suficientes (min 11)
+      const emptyAcc = () => ({ nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '', tiras: [] });
+      const loadedAcc = p.accessories ?? INITIAL_CHARACTER.accessories;
+      const accessories = loadedAcc.length >= 11
+        ? loadedAcc
+        : [...loadedAcc, ...Array.from({ length: 11 - loadedAcc.length }, emptyAcc)];
+
+      // Migração: preserva skillBonuses e attrBonuses vindos do save
+      const titles = p.titles
+        ? {
+            ...INITIAL_CHARACTER.titles,
+            ...p.titles,
+            skillBonuses: p.titles.skillBonuses ?? [],
+            attrBonuses:  p.titles.attrBonuses  ?? [],
+          }
+        : INITIAL_CHARACTER.titles;
+
       return {
         ...INITIAL_CHARACTER,
         ...p,
         status,
         equipment:        p.equipment        ?? INITIAL_CHARACTER.equipment,
-        accessories:      p.accessories      ?? INITIAL_CHARACTER.accessories,
+        accessories,
         skillTree:        p.skillTree        ?? INITIAL_CHARACTER.skillTree,
-        titles:           p.titles           ?? INITIAL_CHARACTER.titles,
+        titles,
         inventory:        p.inventory        ?? INITIAL_CHARACTER.inventory,
         narrativeEffects: p.narrativeEffects ?? INITIAL_CHARACTER.narrativeEffects,
         settings,
@@ -136,7 +175,7 @@ function reducer(state, action) {
       };
       const newStatus = applyComputedMaxes(
         state.status, newAttrs,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [])
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], newAttrs)
       );
 
       if (newVal > curVal) {
@@ -153,17 +192,27 @@ function reducer(state, action) {
     case 'CHANGE_SKILL': {
       const curVal = state.skills[action.skill] || 0;
       const newVal = clamp(curVal + action.delta, 0, 5);
+      const newSkills = { ...state.skills, [action.skill]: newVal };
+
+      // Se algum título escala com esta perícia, recalcula tetos de status
+      const skillBonuses = state.titles?.skillBonuses ?? [];
+      const affectsMax = skillBonuses.some(b => b.skill === action.skill);
+      const newStatus = affectsMax
+        ? applyComputedMaxes(state.status, state.attributes,
+            totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], skillBonuses, newSkills, state.titles?.attrBonuses ?? [], state.attributes))
+        : state.status;
 
       if (newVal > curVal) {
         const cat    = getSkillCategory(action.skill);
         const xpCost = state.settings.xpCosts[cat] ?? 5;
         const cost   = xpCostForRange(curVal, newVal, xpCost);
         if (state.status.xp.current < cost) return state; // XP insuficiente
-        const newXp  = { ...state.status.xp, current: state.status.xp.current - cost };
-        return { ...state, skills: { ...state.skills, [action.skill]: newVal }, status: { ...state.status, xp: newXp } };
+        const xpBase = affectsMax ? newStatus : state.status;
+        const newXp  = { ...xpBase.xp, current: xpBase.xp.current - cost };
+        return { ...state, skills: newSkills, status: { ...newStatus, xp: newXp } };
       }
 
-      return { ...state, skills: { ...state.skills, [action.skill]: newVal } };
+      return { ...state, skills: newSkills, status: newStatus };
     }
 
     // ── Equipamento ──────────────────────────────────────────────────────────
@@ -235,22 +284,40 @@ function reducer(state, action) {
       return { ...state, equipment: newEquipment };
     }
 
-    // { section: 'bolsa'|'cinto', index, slot: 'maoDireita'|'maoEsquerda' }
+    // { section?: 'bolsa'|'cinto', storageId?: string, index, slot: 'maoDireita'|'maoEsquerda' }
     case 'EQUIP_FROM_INVENTORY': {
-      const inv = state.inventory[action.section];
-      const item = inv.itens[action.index];
-      if (!item?.nome) return state;
-      const newItens = [...inv.itens];
-      newItens[action.index] = { nome: '', obs: '' };
+      let item, newInventory;
+      if (action.storageId) {
+        // Item em armazenamento customizado
+        const storages = (state.inventory.storages ?? []).map(s => {
+          if (s.id !== action.storageId) return s;
+          item = s.itens[action.index];
+          const newItens = [...s.itens];
+          newItens[action.index] = { nome: '', obs: '' };
+          return { ...s, itens: newItens };
+        });
+        if (!item?.nome) return state;
+        newInventory = { ...state.inventory, storages };
+      } else {
+        const inv = state.inventory[action.section];
+        item = inv.itens[action.index];
+        if (!item?.nome) return state;
+        const newItens = [...inv.itens];
+        newItens[action.index] = { nome: '', obs: '' };
+        newInventory = { ...state.inventory, [action.section]: { ...inv, itens: newItens } };
+      }
       const handSlot = state.equipment[action.slot];
+      const newHandSlot = item.weaponData
+        ? { ...handSlot, nome: item.nome, ...item.weaponData }
+        : { ...handSlot, nome: item.nome };
       return {
         ...state,
-        inventory: { ...state.inventory, [action.section]: { ...inv, itens: newItens } },
-        equipment: { ...state.equipment, [action.slot]: { ...handSlot, nome: item.nome } },
+        inventory: newInventory,
+        equipment: { ...state.equipment, [action.slot]: newHandSlot },
       };
     }
 
-    // { slot: 'maoDireita'|'maoEsquerda' }  — move arma de volta para a bolsa
+    // { slot: 'maoDireita'|'maoEsquerda' }  — move arma para bolsa preservando tiras e nível
     case 'UNEQUIP_TO_INVENTORY': {
       const handSlot = state.equipment[action.slot];
       if (!handSlot?.nome) return state;
@@ -258,8 +325,22 @@ function reducer(state, action) {
       const emptyIdx = bolsa.itens.findIndex((it, i) => !it.nome && i < bolsa.capacidade);
       if (emptyIdx === -1) return state; // bolsa cheia
       const newItens = [...bolsa.itens];
-      newItens[emptyIdx] = { nome: handSlot.nome, obs: '' };
-      const emptyHand = { ...handSlot, nome: '', tipo: '', tipo2: '', dano: '', efeitos: '' };
+      // Guarda todos os dados da arma no item de inventário
+      newItens[emptyIdx] = {
+        nome: handSlot.nome,
+        obs: '',
+        weaponData: {
+          tipo:            handSlot.tipo            ?? '',
+          tipo2:           handSlot.tipo2           ?? '',
+          dano:            handSlot.dano            ?? '',
+          efeitos:         handSlot.efeitos         ?? '',
+          nivel:           handSlot.nivel           ?? 1,
+          tiras:           handSlot.tiras           ?? [],
+          durabilidade:    handSlot.durabilidade    ?? 10,
+          durabilidadeMax: handSlot.durabilidadeMax ?? 10,
+        },
+      };
+      const emptyHand = { tipo: '', tipo2: '', nome: '', dano: '', efeitos: '', nivel: 1, tiras: [], durabilidade: 10, durabilidadeMax: 10 };
       return {
         ...state,
         inventory: { ...state.inventory, bolsa: { ...bolsa, itens: newItens } },
@@ -302,7 +383,7 @@ function reducer(state, action) {
       const newEffects = [...(state.narrativeEffects ?? []), action.effect];
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects)
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], state.attributes)
       );
       // Aumenta current para bônus positivos de status
       for (const linha of action.effect.linhas ?? []) {
@@ -319,7 +400,7 @@ function reducer(state, action) {
       const newEffects = (state.narrativeEffects ?? []).filter((_, i) => i !== action.index);
       const newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects)
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], state.attributes)
       );
       return { ...state, narrativeEffects: newEffects, status: newStatus };
     }
@@ -470,15 +551,34 @@ function reducer(state, action) {
         newBonuses[ef.status] = (newBonuses[ef.status] || 0) + ef.delta;
       }
 
+      // Acumula skill-based e attr-based bonuses do título
+      const newSkillBonuses = [...(state.titles?.skillBonuses ?? []), ...(title.skillEfeitos ?? [])];
+      const newAttrBonuses  = [...(state.titles?.attrBonuses  ?? []), ...(title.attrEfeitos  ?? [])];
+
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [])
+        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [], newSkillBonuses, state.skills ?? {}, newAttrBonuses, state.attributes)
       );
-      // Aumenta o current proporcional ao bônus positivo
+      // Aumenta o current proporcional ao bônus positivo (estático)
       for (const ef of title.efeitos ?? []) {
         if (ef.delta > 0 && COMPUTED_STATUS_KEYS.includes(ef.status)) {
           const s = newStatus[ef.status];
           newStatus = { ...newStatus, [ef.status]: { ...s, current: Math.min(s.current + ef.delta, s.max) } };
+        }
+      }
+      // Aumenta o current para bônus de skill (valor atual da perícia)
+      for (const { status, skill } of title.skillEfeitos ?? []) {
+        const delta = state.skills?.[skill] ?? 0;
+        if (delta > 0 && COMPUTED_STATUS_KEYS.includes(status)) {
+          const s = newStatus[status];
+          newStatus = { ...newStatus, [status]: { ...s, current: Math.min(s.current + delta, s.max) } };
+        }
+      }
+      // Aumenta o current para bônus de attr já atendidos
+      for (const { status, group, subAttr, threshold, delta } of title.attrEfeitos ?? []) {
+        if ((state.attributes[group]?.[subAttr] ?? 0) >= threshold && COMPUTED_STATUS_KEYS.includes(status)) {
+          const s = newStatus[status];
+          newStatus = { ...newStatus, [status]: { ...s, current: Math.min(s.current + delta, s.max) } };
         }
       }
 
@@ -493,6 +593,8 @@ function reducer(state, action) {
         titles: {
           acquired: [...acquired, action.titleId],
           statusBonuses: newBonuses,
+          skillBonuses: newSkillBonuses,
+          attrBonuses: newAttrBonuses,
           bindings: newBindings,
         },
       };
@@ -513,6 +615,72 @@ function reducer(state, action) {
       const { bolsa } = state.inventory;
       if (bolsa.capacidade >= bolsa.itens.length) return state;
       return { ...state, inventory: { ...state.inventory, bolsa: { ...bolsa, capacidade: bolsa.capacidade + 1 } } };
+    }
+
+    // Diminui a bolsa em 1 slot (mínimo 1; só se o último slot estiver vazio)
+    case 'INVENTORY_SHRINK_BOLSA': {
+      const { bolsa } = state.inventory;
+      if (bolsa.capacidade <= 1) return state;
+      const lastItem = bolsa.itens[bolsa.capacidade - 1];
+      if (lastItem?.nome) return { ...state, _shrinkBlocked: true }; // slot ocupado
+      return { ...state, inventory: { ...state.inventory, bolsa: { ...bolsa, capacidade: bolsa.capacidade - 1 } } };
+    }
+
+    // { nome, icone, capacidade }
+    case 'INVENTORY_ADD_STORAGE': {
+      const id = `storage_${Date.now()}`;
+      const cap = action.capacidade ?? 6;
+      const newStorage = {
+        id,
+        nome: action.nome ?? 'Armazenamento',
+        icone: action.icone ?? '📦',
+        capacidade: cap,
+        itens: Array.from({ length: 40 }, () => ({ nome: '', obs: '' })),
+      };
+      const storages = [...(state.inventory.storages ?? []), newStorage];
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId }
+    case 'INVENTORY_REMOVE_STORAGE': {
+      const storages = (state.inventory.storages ?? []).filter(s => s.id !== action.storageId);
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, nome?, icone? }
+    case 'INVENTORY_RENAME_STORAGE': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        return {
+          ...s,
+          ...(action.nome  !== undefined ? { nome: action.nome }   : {}),
+          ...(action.icone !== undefined ? { icone: action.icone } : {}),
+        };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, delta }
+    case 'INVENTORY_SET_STORAGE_CAPACITY': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const cap = Math.max(1, Math.min(40, s.capacidade + action.delta));
+        // Se está diminuindo, bloqueia se o último slot estiver ocupado
+        if (action.delta < 0 && s.itens[s.capacidade - 1]?.nome) return s;
+        return { ...s, capacidade: cap };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, index, field: 'nome'|'obs', value }
+    case 'INVENTORY_SET_STORAGE_ITEM': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const newItens = [...s.itens];
+        newItens[action.index] = { ...newItens[action.index], [action.field]: action.value };
+        return { ...s, itens: newItens };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
     }
 
     case 'INVENTORY_TOGGLE_CINTO': {
