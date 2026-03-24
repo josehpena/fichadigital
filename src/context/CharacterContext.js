@@ -235,21 +235,35 @@ function reducer(state, action) {
       return { ...state, equipment: newEquipment };
     }
 
-    // { section: 'bolsa'|'cinto', index, slot: 'maoDireita'|'maoEsquerda' }
+    // { section?: 'bolsa'|'cinto', storageId?: string, index, slot: 'maoDireita'|'maoEsquerda' }
     case 'EQUIP_FROM_INVENTORY': {
-      const inv = state.inventory[action.section];
-      const item = inv.itens[action.index];
-      if (!item?.nome) return state;
-      const newItens = [...inv.itens];
-      newItens[action.index] = { nome: '', obs: '' };
+      let item, newInventory;
+      if (action.storageId) {
+        // Item em armazenamento customizado
+        const storages = (state.inventory.storages ?? []).map(s => {
+          if (s.id !== action.storageId) return s;
+          item = s.itens[action.index];
+          const newItens = [...s.itens];
+          newItens[action.index] = { nome: '', obs: '' };
+          return { ...s, itens: newItens };
+        });
+        if (!item?.nome) return state;
+        newInventory = { ...state.inventory, storages };
+      } else {
+        const inv = state.inventory[action.section];
+        item = inv.itens[action.index];
+        if (!item?.nome) return state;
+        const newItens = [...inv.itens];
+        newItens[action.index] = { nome: '', obs: '' };
+        newInventory = { ...state.inventory, [action.section]: { ...inv, itens: newItens } };
+      }
       const handSlot = state.equipment[action.slot];
-      // Restaura tiras, nível e dados completos se o item carrega weaponData
       const newHandSlot = item.weaponData
         ? { ...handSlot, nome: item.nome, ...item.weaponData }
         : { ...handSlot, nome: item.nome };
       return {
         ...state,
-        inventory: { ...state.inventory, [action.section]: { ...inv, itens: newItens } },
+        inventory: newInventory,
         equipment: { ...state.equipment, [action.slot]: newHandSlot },
       };
     }
@@ -531,6 +545,72 @@ function reducer(state, action) {
       const { bolsa } = state.inventory;
       if (bolsa.capacidade >= bolsa.itens.length) return state;
       return { ...state, inventory: { ...state.inventory, bolsa: { ...bolsa, capacidade: bolsa.capacidade + 1 } } };
+    }
+
+    // Diminui a bolsa em 1 slot (mínimo 1; só se o último slot estiver vazio)
+    case 'INVENTORY_SHRINK_BOLSA': {
+      const { bolsa } = state.inventory;
+      if (bolsa.capacidade <= 1) return state;
+      const lastItem = bolsa.itens[bolsa.capacidade - 1];
+      if (lastItem?.nome) return { ...state, _shrinkBlocked: true }; // slot ocupado
+      return { ...state, inventory: { ...state.inventory, bolsa: { ...bolsa, capacidade: bolsa.capacidade - 1 } } };
+    }
+
+    // { nome, icone, capacidade }
+    case 'INVENTORY_ADD_STORAGE': {
+      const id = `storage_${Date.now()}`;
+      const cap = action.capacidade ?? 6;
+      const newStorage = {
+        id,
+        nome: action.nome ?? 'Armazenamento',
+        icone: action.icone ?? '📦',
+        capacidade: cap,
+        itens: Array.from({ length: 40 }, () => ({ nome: '', obs: '' })),
+      };
+      const storages = [...(state.inventory.storages ?? []), newStorage];
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId }
+    case 'INVENTORY_REMOVE_STORAGE': {
+      const storages = (state.inventory.storages ?? []).filter(s => s.id !== action.storageId);
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, nome?, icone? }
+    case 'INVENTORY_RENAME_STORAGE': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        return {
+          ...s,
+          ...(action.nome  !== undefined ? { nome: action.nome }   : {}),
+          ...(action.icone !== undefined ? { icone: action.icone } : {}),
+        };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, delta }
+    case 'INVENTORY_SET_STORAGE_CAPACITY': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const cap = Math.max(1, Math.min(40, s.capacidade + action.delta));
+        // Se está diminuindo, bloqueia se o último slot estiver ocupado
+        if (action.delta < 0 && s.itens[s.capacidade - 1]?.nome) return s;
+        return { ...s, capacidade: cap };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, index, field: 'nome'|'obs', value }
+    case 'INVENTORY_SET_STORAGE_ITEM': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const newItens = [...s.itens];
+        newItens[action.index] = { ...newItens[action.index], [action.field]: action.value };
+        return { ...s, itens: newItens };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
     }
 
     case 'INVENTORY_TOGGLE_CINTO': {

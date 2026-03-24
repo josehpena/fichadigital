@@ -105,6 +105,7 @@ export const INITIAL_CHARACTER = {
       ativo: false,
       itens: Array.from({ length: 10 }, () => ({ nome: '', obs: '' })),
     },
+    storages: [], // armazenamentos customizados: [{ id, nome, icone, capacidade, itens }]
   },
 
   settings: {
