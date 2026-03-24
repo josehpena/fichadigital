@@ -40,11 +40,24 @@ function computeNarrativeBonuses(narrativeEffects = []) {
   return result;
 }
 
-// Mescla bônus de títulos com bônus narrativos
-function totalStatusBonuses(titleBonuses = {}, narrativeEffects = []) {
+// Bônus de max que escalam com o valor atual de uma perícia
+function computeTitleSkillBonuses(skillBonuses = [], skills = {}) {
+  const result = {};
+  for (const { status, skill } of skillBonuses) {
+    result[status] = (result[status] || 0) + (skills[skill] || 0);
+  }
+  return result;
+}
+
+// Mescla bônus de títulos, narrativos e skill-based
+function totalStatusBonuses(titleBonuses = {}, narrativeEffects = [], skillBonuses = [], skills = {}) {
   const narrative = computeNarrativeBonuses(narrativeEffects);
+  const skillDelta = computeTitleSkillBonuses(skillBonuses, skills);
   const merged = { ...titleBonuses };
   for (const [k, v] of Object.entries(narrative)) {
+    merged[k] = (merged[k] || 0) + v;
+  }
+  for (const [k, v] of Object.entries(skillDelta)) {
     merged[k] = (merged[k] || 0) + v;
   }
   return merged;
@@ -71,7 +84,7 @@ function reducer(state, action) {
       if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
       const status = applyComputedMaxes(
         p.status, p.attributes,
-        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [])
+        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [], p.titles?.skillBonuses ?? [], p.skills ?? {})
       );
       // Mescla settings: preserva customizações salvas, garante campos novos
       const savedSettings = p.settings ?? {};
@@ -136,7 +149,7 @@ function reducer(state, action) {
       };
       const newStatus = applyComputedMaxes(
         state.status, newAttrs,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [])
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], state.titles?.skillBonuses ?? [], state.skills ?? {})
       );
 
       if (newVal > curVal) {
@@ -153,17 +166,27 @@ function reducer(state, action) {
     case 'CHANGE_SKILL': {
       const curVal = state.skills[action.skill] || 0;
       const newVal = clamp(curVal + action.delta, 0, 5);
+      const newSkills = { ...state.skills, [action.skill]: newVal };
+
+      // Se algum título escala com esta perícia, recalcula tetos de status
+      const skillBonuses = state.titles?.skillBonuses ?? [];
+      const affectsMax = skillBonuses.some(b => b.skill === action.skill);
+      const newStatus = affectsMax
+        ? applyComputedMaxes(state.status, state.attributes,
+            totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], skillBonuses, newSkills))
+        : state.status;
 
       if (newVal > curVal) {
         const cat    = getSkillCategory(action.skill);
         const xpCost = state.settings.xpCosts[cat] ?? 5;
         const cost   = xpCostForRange(curVal, newVal, xpCost);
         if (state.status.xp.current < cost) return state; // XP insuficiente
-        const newXp  = { ...state.status.xp, current: state.status.xp.current - cost };
-        return { ...state, skills: { ...state.skills, [action.skill]: newVal }, status: { ...state.status, xp: newXp } };
+        const xpBase = affectsMax ? newStatus : state.status;
+        const newXp  = { ...xpBase.xp, current: xpBase.xp.current - cost };
+        return { ...state, skills: newSkills, status: { ...newStatus, xp: newXp } };
       }
 
-      return { ...state, skills: { ...state.skills, [action.skill]: newVal } };
+      return { ...state, skills: newSkills, status: newStatus };
     }
 
     // ── Equipamento ──────────────────────────────────────────────────────────
@@ -334,7 +357,7 @@ function reducer(state, action) {
       const newEffects = [...(state.narrativeEffects ?? []), action.effect];
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects)
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {})
       );
       // Aumenta current para bônus positivos de status
       for (const linha of action.effect.linhas ?? []) {
@@ -351,7 +374,7 @@ function reducer(state, action) {
       const newEffects = (state.narrativeEffects ?? []).filter((_, i) => i !== action.index);
       const newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects)
+        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {})
       );
       return { ...state, narrativeEffects: newEffects, status: newStatus };
     }
@@ -502,15 +525,26 @@ function reducer(state, action) {
         newBonuses[ef.status] = (newBonuses[ef.status] || 0) + ef.delta;
       }
 
+      // Acumula skill-based bonuses do título
+      const newSkillBonuses = [...(state.titles?.skillBonuses ?? []), ...(title.skillEfeitos ?? [])];
+
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [])
+        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [], newSkillBonuses, state.skills ?? {})
       );
-      // Aumenta o current proporcional ao bônus positivo
+      // Aumenta o current proporcional ao bônus positivo (estático)
       for (const ef of title.efeitos ?? []) {
         if (ef.delta > 0 && COMPUTED_STATUS_KEYS.includes(ef.status)) {
           const s = newStatus[ef.status];
           newStatus = { ...newStatus, [ef.status]: { ...s, current: Math.min(s.current + ef.delta, s.max) } };
+        }
+      }
+      // Aumenta o current para bônus de skill (valor atual da perícia)
+      for (const { status, skill } of title.skillEfeitos ?? []) {
+        const delta = state.skills?.[skill] ?? 0;
+        if (delta > 0 && COMPUTED_STATUS_KEYS.includes(status)) {
+          const s = newStatus[status];
+          newStatus = { ...newStatus, [status]: { ...s, current: Math.min(s.current + delta, s.max) } };
         }
       }
 
@@ -525,6 +559,7 @@ function reducer(state, action) {
         titles: {
           acquired: [...acquired, action.titleId],
           statusBonuses: newBonuses,
+          skillBonuses: newSkillBonuses,
           bindings: newBindings,
         },
       };

@@ -396,6 +396,14 @@ function AttackPanel({ actionsLeft, onConfirm }) {
   const destreza     = attrs?.robustez?.destreza ?? 0;
   const armasBrancas = skills?.armasBrancas      ?? 0;
   const armasRange   = skills?.armasRange        ?? 0;
+  const esportes     = skills?.esportes          ?? 0;
+
+  const acquiredTitles = character.titles?.acquired ?? [];
+  const hasBarbaro = acquiredTitles.includes('barbaro');
+  const hasAlgoz   = acquiredTitles.includes('algoz');
+  const vidaAtual  = character.status?.vida?.current ?? 0;
+  const vidaMax    = character.status?.vida?.max     ?? 0;
+  const vidaPerdida = Math.max(0, vidaMax - vidaAtual);
 
   const [selSlot,   setSelSlot]   = useState(null);
   const [twoHand,   setTwoHand]   = useState(false);
@@ -466,6 +474,17 @@ function AttackPanel({ actionsLeft, onConfirm }) {
       formula.partes.push({ label: lbl, val: effectiveVal });
       formula.total += effectiveVal;
     }
+  }
+
+  // Título Bárbaro: soma Esportes ao dano quando há vida perdida (ataques físicos)
+  if (formula && !ranged && hasBarbaro && vidaPerdida > 0 && esportes > 0) {
+    formula.partes.push({ label: `Esportes (Bárbaro)`, val: esportes });
+    formula.total += esportes;
+  }
+  // Título Algoz: soma vida perdida ao dano em ataques com 2 mãos
+  if (formula && twoHand && hasAlgoz && vidaPerdida > 0) {
+    formula.partes.push({ label: `Vida perdida (Algoz)`, val: vidaPerdida });
+    formula.total += vidaPerdida;
   }
 
   // Energia total = 1 (ataque) + soma dos níveis selecionados de habilidades
