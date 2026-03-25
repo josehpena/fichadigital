@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
  * Subscribe to item_grants for a player in a campaign via Supabase Realtime.
  * When a pending grant arrives:
  *   - Shows an Alert asking Accept / Reject
- *   - On accept: dispatches INVENTORY_SET_ITEM and updates grant status to 'received'
+ *   - On accept: dispatches INVENTORY_ADD_GRANTED_ITEM and updates grant status to 'received'
  *   - On reject: updates grant status to 'rejected'
  *
  * Returns an unsubscribe function.
@@ -31,7 +31,7 @@ export function subscribeToGrants(campaignId, playerId, dispatch) {
         // Fetch item details
         const { data: item } = await supabase
           .from('items_catalog')
-          .select('name, description, type, properties')
+          .select('name, description, type, weight, properties')
           .eq('id', grant.item_id)
           .single();
 
@@ -39,7 +39,7 @@ export function subscribeToGrants(campaignId, playerId, dispatch) {
         const itemDesc = item?.description ? `\n${item.description}` : '';
 
         Alert.alert(
-          'Item Recebido',
+          'Item Recebido!',
           `O mestre enviou: ${itemName}${itemDesc}\n\nDeseja aceitar?`,
           [
             {
@@ -50,14 +50,11 @@ export function subscribeToGrants(campaignId, playerId, dispatch) {
             {
               text: 'Aceitar',
               onPress: () => {
-                // Add item to bolsa (first empty slot)
+                // INVENTORY_ADD_GRANTED_ITEM finds the first empty slot automatically
                 dispatch({
-                  type: 'INVENTORY_SET_ITEM',
-                  section: 'bolsa',
-                  index: -1, // CampaignScreen / reducer handles first empty slot lookup
-                  field: 'nome',
-                  value: itemName,
-                  _itemGrantData: item, // extra metadata ignored by reducer
+                  type: 'INVENTORY_ADD_GRANTED_ITEM',
+                  nome: itemName,
+                  obs: item?.description ?? '',
                 });
                 updateGrantStatus(grant.id, 'received');
               },
