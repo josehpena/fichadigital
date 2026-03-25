@@ -2,14 +2,14 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Subscribe to master_actions for a player in a campaign via Supabase Realtime.
- * When an unapplied action arrives, calls onAction(action) and marks it as applied.
  *
- * Mapping of action_type to CharacterContext reducer action:
- *   damage        -> CHANGE_STATUS { statusKey, field: 'current', delta: -amount }
- *   heal          -> CHANGE_STATUS { statusKey, field: 'current', delta: +amount }
- *   grant_xp      -> CHANGE_STATUS { statusKey: 'xp', field: 'current', delta: +amount }
- *   add_effect    -> ADD_NARRATIVE_EFFECT { effect }
- *   remove_effect -> REMOVE_NARRATIVE_EFFECT { index }
+ * action_type → CharacterContext reducer mapping:
+ *   damage        → CHANGE_STATUS (subtracts from current)
+ *   heal          → CHANGE_STATUS (adds to current)
+ *   grant_xp      → CHANGE_STATUS on xp
+ *   grant_moedas  → INVENTORY_CHANGE_MOEDAS
+ *   add_effect    → ADD_NARRATIVE_EFFECT
+ *   remove_effect → REMOVE_NARRATIVE_EFFECT
  *
  * Returns an unsubscribe function.
  */
@@ -31,11 +31,10 @@ export function subscribeToActions(campaignId, playerId, dispatch) {
         if (action.target_player_id !== playerId) return;
         if (action.applied) return;
 
-        // Map to reducer action and dispatch
         const reducerAction = mapToReducerAction(action);
         if (reducerAction) dispatch(reducerAction);
 
-        // Acknowledge to Supabase
+        // Acknowledge: mark as applied
         await supabase
           .from('master_actions')
           .update({ applied: true })
@@ -69,6 +68,11 @@ function mapToReducerAction(action) {
         type: 'CHANGE_STATUS',
         statusKey: 'xp',
         field: 'current',
+        delta: Math.abs(payload.amount ?? 0),
+      };
+    case 'grant_moedas':
+      return {
+        type: 'INVENTORY_CHANGE_MOEDAS',
         delta: Math.abs(payload.amount ?? 0),
       };
     case 'add_effect':
