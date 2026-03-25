@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { useCharacter } from '../context/CharacterContext';
 import {
   getMyCampaigns,
   joinCampaign,
@@ -11,16 +12,22 @@ import {
   linkCharacter,
   unlinkCharacter,
 } from '../services/campaignService';
+import { subscribeToActions } from '../services/masterActionsListener';
+import { subscribeToGrants } from '../services/itemGrantsListener';
 import { loadSheetsList } from '../utils/sheetsManager';
 
 export default function CampaignScreen() {
   const { user, profile } = useAuth();
+  const { dispatch } = useCharacter();
   const [campaigns, setCampaigns]     = useState([]);
   const [loading, setLoading]         = useState(false);
   const [inviteCode, setInviteCode]   = useState('');
   const [joining, setJoining]         = useState(false);
   const [sheets, setSheets]           = useState([]);
   const [linkingFor, setLinkingFor]   = useState(null); // campaignId waiting for sheet selection
+
+  // Holds all active unsubscribe functions so we can clean up
+  const unsubscribersRef = useRef([]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -35,6 +42,29 @@ export default function CampaignScreen() {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Re-subscribe whenever campaigns list changes
+  useEffect(() => {
+    if (!user || !dispatch) return;
+
+    // Tear down previous subscriptions
+    unsubscribersRef.current.forEach(fn => fn());
+    unsubscribersRef.current = [];
+
+    // Subscribe only for campaigns that have a linked character
+    campaigns
+      .filter(cp => cp.character_id)
+      .forEach(cp => {
+        const unsubActions = subscribeToActions(cp.campaign_id, user.id, dispatch);
+        const unsubGrants  = subscribeToGrants(cp.campaign_id, user.id, dispatch);
+        unsubscribersRef.current.push(unsubActions, unsubGrants);
+      });
+
+    return () => {
+      unsubscribersRef.current.forEach(fn => fn());
+      unsubscribersRef.current = [];
+    };
+  }, [campaigns, user, dispatch]);
 
   async function handleJoin() {
     if (!inviteCode.trim()) return;
@@ -145,6 +175,12 @@ export default function CampaignScreen() {
 
                   <Text style={styles.cardMeta}>Código: {camp?.invite_code}</Text>
 
+                  {item.character_id && (
+                    <Text style={[styles.cardMeta, styles.activeTag]}>
+                      Ouvindo ações do mestre
+                    </Text>
+                  )}
+
                   <View style={styles.sheetRow}>
                     <Text style={styles.cardMeta}>
                       Ficha: {linked ? linked.name : 'Nenhuma vinculada'}
@@ -210,6 +246,7 @@ const styles = StyleSheet.create({
   cardHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   cardTitle:    { color: '#cdd6f4', fontSize: 16, fontWeight: '700' },
   cardMeta:     { color: '#a6adc8', fontSize: 12, marginTop: 2 },
+  activeTag:    { color: '#a6e3a1', fontSize: 11, marginTop: 4 },
   leaveBtn:     { color: '#f38ba8', fontSize: 12, fontWeight: '600' },
   sheetRow:     { flexDirection: 'row', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 6 },
   linkBtn:      { backgroundColor: '#89b4fa', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
