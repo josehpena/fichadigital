@@ -317,6 +317,69 @@ function reducer(state, action) {
       };
     }
 
+    // { slot: ARMOR_SLOT }  — move peça de armadura para bolsa preservando todos os dados
+    case 'UNEQUIP_ARMOR_TO_INVENTORY': {
+      const armorSlot = state.equipment[action.slot];
+      if (!armorSlot?.nome) return state;
+      const bolsa = state.inventory.bolsa;
+      const emptyIdx = bolsa.itens.findIndex((it, i) => !it.nome && i < bolsa.capacidade);
+      if (emptyIdx === -1) return state; // bolsa cheia
+      const newItens = [...bolsa.itens];
+      newItens[emptyIdx] = {
+        nome: armorSlot.nome,
+        obs: '',
+        armorData: {
+          slot:            action.slot,
+          armadura:        armorSlot.armadura        ?? 0,
+          resMagica:       armorSlot.resMagica       ?? 0,
+          reputacao:       armorSlot.reputacao       ?? 0,
+          efeitos:         armorSlot.efeitos         ?? '',
+          nivel:           armorSlot.nivel           ?? 1,
+          tiras:           armorSlot.tiras           ?? [],
+          durabilidade:    armorSlot.durabilidade    ?? 10,
+          durabilidadeMax: armorSlot.durabilidadeMax ?? 10,
+        },
+      };
+      const emptyArmor = { nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '', nivel: 1, tiras: [], durabilidade: 10, durabilidadeMax: 10 };
+      return {
+        ...state,
+        inventory: { ...state.inventory, bolsa: { ...bolsa, itens: newItens } },
+        equipment: { ...state.equipment, [action.slot]: emptyArmor },
+      };
+    }
+
+    // { section?, storageId?, index, slot: ARMOR_SLOT }  — equipa armadura do inventário
+    case 'EQUIP_ARMOR_FROM_INVENTORY': {
+      let item, newInventory;
+      if (action.storageId) {
+        const storages = (state.inventory.storages ?? []).map(s => {
+          if (s.id !== action.storageId) return s;
+          item = s.itens[action.index];
+          const newItens = [...s.itens];
+          newItens[action.index] = { nome: '', obs: '' };
+          return { ...s, itens: newItens };
+        });
+        if (!item?.nome) return state;
+        newInventory = { ...state.inventory, storages };
+      } else {
+        const inv = state.inventory[action.section];
+        item = inv.itens[action.index];
+        if (!item?.nome) return state;
+        const newItens = [...inv.itens];
+        newItens[action.index] = { nome: '', obs: '' };
+        newInventory = { ...state.inventory, [action.section]: { ...inv, itens: newItens } };
+      }
+      const current = state.equipment[action.slot];
+      const newArmorSlot = item.armorData
+        ? { ...current, nome: item.nome, ...item.armorData, slot: undefined }
+        : { ...current, nome: item.nome };
+      return {
+        ...state,
+        inventory: newInventory,
+        equipment: { ...state.equipment, [action.slot]: newArmorSlot },
+      };
+    }
+
     // { slot: 'maoDireita'|'maoEsquerda' }  — move arma para bolsa preservando tiras e nível
     case 'UNEQUIP_TO_INVENTORY': {
       const handSlot = state.equipment[action.slot];

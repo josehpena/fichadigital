@@ -189,21 +189,15 @@ function WeaponModal({ visible, slotKey, onClose }) {
 
   function selectTrail(trail) {
     if (trail.categoria === 'MACHADOS') {
-      // Machado suporta dual-trail (Norte + Sul)
-      if (equip.tipo === trail.id) {
-        // Deseleciona primário → promove tipo2 se existir
-        setField('tipo', equip.tipo2 || '');
+      // Machado é sempre duplo: norte + sul
+      if (isMachadoId(equip.tipo)) {
+        // Já selecionado — deseleciona
+        setField('tipo', '');
         setField('tipo2', '');
-      } else if (equip.tipo2 === trail.id) {
-        setField('tipo2', '');
-      } else if (isMachadoId(equip.tipo)) {
-        // Já tem um machado como primário → adiciona como secundário
-        setField('tipo2', trail.id);
       } else {
-        // Primeiro machado selecionado
-        setField('tipo', trail.id);
-        setField('tipo2', '');
-        if (!equip.nome) setField('nome', trail.nome);
+        setField('tipo', 'machado_do_norte');
+        setField('tipo2', 'machado_do_sul');
+        if (!equip.nome) setField('nome', 'Machado');
       }
     } else {
       setField('tipo', trail.id);
@@ -240,32 +234,45 @@ function WeaponModal({ visible, slotKey, onClose }) {
 
           {/* Tipo de arma — agrupado por categoria */}
           <Text style={ms.sectionLabel}>Tipo de Arma</Text>
-          {equip.tipo2 && (
-            <Text style={ms.dualTrailHint}>⚔ Dual: {trailName(equip.tipo)} + {trailName(equip.tipo2)}</Text>
-          )}
-          {Object.entries(WEAPONS_BY_CAT).map(([cat, trails]) => (
-            <View key={cat} style={ms.catGroup}>
-              <Text style={ms.catGroupLabel}>
-                {cat}{cat === 'MACHADOS' ? '  (toque 2× para dual)' : ''}
-              </Text>
-              <View style={ms.catGroupRow}>
-                {trails.map(trail => {
-                  const isActive = equip.tipo === trail.id || equip.tipo2 === trail.id;
-                  return (
+          {Object.entries(WEAPONS_BY_CAT).map(([cat, trails]) => {
+            if (cat === 'MACHADOS') {
+              const isActive = isMachadoId(equip.tipo);
+              return (
+                <View key={cat} style={ms.catGroup}>
+                  <Text style={ms.catGroupLabel}>{cat}</Text>
+                  <View style={ms.catGroupRow}>
                     <TouchableOpacity
-                      key={trail.id}
                       style={[ms.catChip, isActive && ms.catChipActive]}
-                      onPress={() => selectTrail(trail)}
+                      onPress={() => selectTrail(trails[0])}
                     >
-                      <Text style={[ms.catChipText, isActive && ms.catChipTextActive]}>
-                        {trail.nome}
-                      </Text>
+                      <Text style={[ms.catChipText, isActive && ms.catChipTextActive]}>Machado</Text>
                     </TouchableOpacity>
-                  );
-                })}
+                  </View>
+                </View>
+              );
+            }
+            return (
+              <View key={cat} style={ms.catGroup}>
+                <Text style={ms.catGroupLabel}>{cat}</Text>
+                <View style={ms.catGroupRow}>
+                  {trails.map(trail => {
+                    const isActive = equip.tipo === trail.id;
+                    return (
+                      <TouchableOpacity
+                        key={trail.id}
+                        style={[ms.catChip, isActive && ms.catChipActive]}
+                        onPress={() => selectTrail(trail)}
+                      >
+                        <Text style={[ms.catChipText, isActive && ms.catChipTextActive]}>
+                          {trail.nome}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
 
           {/* Nome personalizado */}
           <Text style={ms.sectionLabel}>Nome</Text>
@@ -288,16 +295,6 @@ function WeaponModal({ visible, slotKey, onClose }) {
               <Text style={ms.numBtnTxt}>+</Text>
             </TouchableOpacity>
           </View>
-
-          {/* Dano */}
-          <Text style={ms.sectionLabel}>Dano</Text>
-          <TextInput
-            style={ms.input}
-            value={equip.dano}
-            onChangeText={v => setField('dano', v)}
-            placeholder="Ex: 1d8 + Força"
-            placeholderTextColor="#45475a"
-          />
 
           {/* Durabilidade */}
           <Text style={ms.sectionLabel}>Durabilidade</Text>
@@ -501,8 +498,11 @@ function HandSlotCard({ slotKey }) {
         <View style={styles.cardRow}>
           <Text style={[styles.slotName, broken && styles.textDim]}>{EQUIP_LABELS[slotKey]}</Text>
           {broken && <View style={styles.brokenBadge}><Text style={styles.brokenText}>QUEBRADA</Text></View>}
-          {equip.tipo  ? <Text style={styles.typeBadge}>{trailName(equip.tipo)}</Text>  : null}
-          {equip.tipo2 ? <Text style={styles.typeBadge}>{trailName(equip.tipo2)}</Text> : null}
+          {equip.tipo ? (
+            <Text style={styles.typeBadge}>
+              {isMachadoId(equip.tipo) ? 'Machado' : trailName(equip.tipo)}
+            </Text>
+          ) : null}
           {(equip.nivel ?? 1) > 1 && <Text style={styles.levelBadge}>Nv {equip.nivel}</Text>}
           <Text style={styles.editHint}>✏️</Text>
         </View>
@@ -511,13 +511,28 @@ function HandSlotCard({ slotKey }) {
         ) : (
           <Text style={styles.emptyHint}>Toque para configurar…</Text>
         )}
-        {equip.dano ? <Text style={styles.equipStat}>⚔️ {equip.dano}</Text> : null}
         {equip.nome && (
           <View style={styles.durBarWrapSm}>
             <View style={[styles.durBarSm, { width: `${durPct * 100}%`, backgroundColor: broken ? '#f38ba8' : '#a6e3a1' }]} />
           </View>
         )}
-        {equip.nome && <Text style={styles.durValSm}>{dur}/{durMax}</Text>}
+        {equip.nome && (
+          <View style={styles.quickDurRow}>
+            <TouchableOpacity
+              style={styles.quickDurBtn}
+              onPress={() => dispatch({ type: 'CHANGE_WEAPON_DURABILITY', slot: slotKey, delta: -1 })}
+            >
+              <Text style={styles.quickDurBtnText}>−</Text>
+            </TouchableOpacity>
+            <Text style={styles.durValSm}>{dur}/{durMax}</Text>
+            <TouchableOpacity
+              style={[styles.quickDurBtn, styles.quickDurBtnPos]}
+              onPress={() => dispatch({ type: 'CHANGE_WEAPON_DURABILITY', slot: slotKey, delta: +1 })}
+            >
+              <Text style={styles.quickDurBtnText}>+</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {(equip.tiras?.length ?? 0) > 0 && (
           <Text style={styles.tirasCount}>🪢 {equip.tiras.length} tira{equip.tiras.length > 1 ? 's' : ''}</Text>
         )}
@@ -538,7 +553,7 @@ function HandSlotCard({ slotKey }) {
 
 // ─── Card de armadura ─────────────────────────────────────────────────────────
 function ArmorSlotCard({ slotKey }) {
-  const { character } = useCharacter();
+  const { character, dispatch } = useCharacter();
   const equip = character.equipment[slotKey];
   const broken = equip.durabilidade === 0;
   const durPct = equip.durabilidadeMax > 0 ? equip.durabilidade / equip.durabilidadeMax : 0;
@@ -566,9 +581,32 @@ function ArmorSlotCard({ slotKey }) {
         <View style={styles.durBarWrapSm}>
           <View style={[styles.durBarSm, { width: `${durPct * 100}%`, backgroundColor: broken ? '#f38ba8' : '#a6e3a1' }]} />
         </View>
-        <Text style={styles.durValSm}>{equip.durabilidade}/{equip.durabilidadeMax}</Text>
+        <View style={styles.quickDurRow}>
+          <TouchableOpacity
+            style={styles.quickDurBtn}
+            onPress={() => dispatch({ type: 'CHANGE_EQUIP_DURABILITY', slot: slotKey, delta: -1 })}
+          >
+            <Text style={styles.quickDurBtnText}>−</Text>
+          </TouchableOpacity>
+          <Text style={styles.durValSm}>{equip.durabilidade}/{equip.durabilidadeMax}</Text>
+          <TouchableOpacity
+            style={[styles.quickDurBtn, styles.quickDurBtnPos]}
+            onPress={() => dispatch({ type: 'CHANGE_EQUIP_DURABILITY', slot: slotKey, delta: +1 })}
+          >
+            <Text style={styles.quickDurBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
         {(equip.tiras?.length ?? 0) > 0 && (
           <Text style={styles.tirasCount}>🪢 {equip.tiras.length} tira{equip.tiras.length > 1 ? 's' : ''}</Text>
+        )}
+        {equip.nome && (
+          <TouchableOpacity
+            style={styles.unequipBtn}
+            onPress={() => dispatch({ type: 'UNEQUIP_ARMOR_TO_INVENTORY', slot: slotKey })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.unequipBtnText}>→ Inventário</Text>
+          </TouchableOpacity>
         )}
       </TouchableOpacity>
       <ArmorModal visible={open} slotKey={slotKey} onClose={() => setOpen(false)} />
@@ -766,6 +804,11 @@ const styles = StyleSheet.create({
 
   unequipBtn: { marginTop: 6, alignSelf: 'flex-start', backgroundColor: '#1d3a2f', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   unequipBtnText: { color: '#a6e3a1', fontSize: 11, fontWeight: '600' },
+
+  quickDurRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  quickDurBtn: { backgroundColor: '#313244', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 3 },
+  quickDurBtnPos: { backgroundColor: '#1d3a2f' },
+  quickDurBtnText: { color: '#cdd6f4', fontSize: 14, fontWeight: '700' },
 
   card: {
     backgroundColor: '#1e1e2e', borderRadius: 12,

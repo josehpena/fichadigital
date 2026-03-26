@@ -4,76 +4,198 @@ import {
   TextInput, StyleSheet, Switch, Alert, Modal,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
+import { ARMOR_SLOTS, EQUIP_LABELS } from '../data/initialCharacter';
 
-// ── Item Slot ─────────────────────────────────────────────────────────────────
-function ItemSlot({ index, item, section, storageId, placeholder }) {
+// ── Item Edit Modal ────────────────────────────────────────────────────────────
+function ItemEditModal({ visible, item, index, section, storageId, onClose }) {
   const { dispatch } = useCharacter();
+  const [nome, setNome] = useState(item.nome);
+  const [obs,  setObs]  = useState(item.obs ?? '');
   const [showEquip, setShowEquip] = useState(false);
-  const isEmpty = !item.nome;
+  const isArmor  = !!item.armorData;
+  const isWeapon = !!item.weaponData;
 
-  function equipTo(slot) {
-    if (storageId) {
-      dispatch({ type: 'EQUIP_FROM_INVENTORY', storageId, index, slot });
-    } else {
-      dispatch({ type: 'EQUIP_FROM_INVENTORY', section, index, slot });
-    }
-    setShowEquip(false);
+  // Sincroniza ao abrir
+  React.useEffect(() => {
+    if (visible) { setNome(item.nome); setObs(item.obs ?? ''); setShowEquip(false); }
+  }, [visible]);
+
+  function save() {
+    const action = storageId
+      ? { type: 'INVENTORY_SET_STORAGE_ITEM', storageId, index }
+      : { type: 'INVENTORY_SET_ITEM', section, index };
+    dispatch({ ...action, field: 'nome', value: nome.trim() });
+    if (!isWeapon && !isArmor) dispatch({ ...action, field: 'obs', value: obs });
+    onClose();
   }
 
-  function setField(field, value) {
-    if (storageId) {
-      dispatch({ type: 'INVENTORY_SET_STORAGE_ITEM', storageId, index, field, value });
-    } else {
-      dispatch({ type: 'INVENTORY_SET_ITEM', section, index, field, value });
-    }
+  function clear() {
+    const action = storageId
+      ? { type: 'INVENTORY_SET_STORAGE_ITEM', storageId, index }
+      : { type: 'INVENTORY_SET_ITEM', section, index };
+    dispatch({ ...action, field: 'nome', value: '' });
+    dispatch({ ...action, field: 'obs',  value: '' });
+    onClose();
+  }
+
+  function equipWeaponTo(slot) {
+    if (storageId) dispatch({ type: 'EQUIP_FROM_INVENTORY', storageId, index, slot });
+    else           dispatch({ type: 'EQUIP_FROM_INVENTORY', section,   index, slot });
+    onClose();
+  }
+
+  function equipArmorTo(slot) {
+    if (storageId) dispatch({ type: 'EQUIP_ARMOR_FROM_INVENTORY', storageId, index, slot });
+    else           dispatch({ type: 'EQUIP_ARMOR_FROM_INVENTORY', section,   index, slot });
+    onClose();
   }
 
   return (
-    <View style={[styles.slot, isEmpty && styles.slotEmpty]}>
-      <TextInput
-        style={styles.slotInput}
-        value={item.nome}
-        placeholder={placeholder ?? `Item ${index + 1}`}
-        placeholderTextColor="#313244"
-        onChangeText={v => setField('nome', v)}
-      />
-      {!isEmpty && (
-        <>
-          {item.weaponData && (
-            <Text style={styles.weaponTag}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.itemModalOverlay}>
+        <View style={styles.itemModalSheet}>
+          <View style={styles.itemModalHeader}>
+            <Text style={styles.itemModalTitle}>{item.nome ? 'Editar Item' : 'Novo Item'}</Text>
+            <TouchableOpacity onPress={onClose}><Text style={styles.itemModalClose}>✕</Text></TouchableOpacity>
+          </View>
+
+          <Text style={styles.itemModalLabel}>Nome</Text>
+          <TextInput
+            style={styles.itemModalInput}
+            value={nome}
+            onChangeText={setNome}
+            placeholder="Nome do item..."
+            placeholderTextColor="#45475a"
+            autoFocus={!item.nome}
+          />
+
+          {!isWeapon && !isArmor && (
+            <>
+              <Text style={styles.itemModalLabel}>Observação</Text>
+              <TextInput
+                style={[styles.itemModalInput, styles.itemModalInputObs]}
+                value={obs}
+                onChangeText={setObs}
+                placeholder="Descrição, quantidade, etc..."
+                placeholderTextColor="#45475a"
+                multiline
+              />
+            </>
+          )}
+
+          {isWeapon && (
+            <Text style={styles.itemModalTag}>
               ⚔{item.weaponData.nivel > 1 ? ` Nv ${item.weaponData.nivel}` : ''}
               {item.weaponData.tiras?.length > 0 ? `  🪢 ${item.weaponData.tiras.length}` : ''}
             </Text>
           )}
-          {!item.weaponData && (
-            <TextInput
-              style={styles.slotObs}
-              value={item.obs}
-              placeholder="obs..."
-              placeholderTextColor="#313244"
-              onChangeText={v => setField('obs', v)}
-            />
+          {isArmor && (
+            <Text style={styles.itemModalTag}>
+              🛡{item.armorData.armadura > 0 ? ` ${item.armorData.armadura}` : ''}
+              {item.armorData.resMagica > 0 ? `  ✨ ${item.armorData.resMagica}` : ''}
+              {item.armorData.nivel > 1 ? `  Nv ${item.armorData.nivel}` : ''}
+              {item.armorData.tiras?.length > 0 ? `  🪢 ${item.armorData.tiras.length}` : ''}
+            </Text>
           )}
-          {showEquip ? (
-            <View style={styles.equipRow}>
-              <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipTo('maoDireita')}>
-                <Text style={styles.equipHandBtnText}>Mão D</Text>
+
+          {(isWeapon || isArmor) && (
+            showEquip ? (
+              <View style={styles.equipRowModal}>
+                {isArmor ? (
+                  ARMOR_SLOTS.map(slot => (
+                    <TouchableOpacity key={slot} style={styles.equipHandBtn} onPress={() => equipArmorTo(slot)}>
+                      <Text style={styles.equipHandBtnText}>{EQUIP_LABELS[slot]}</Text>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <>
+                    <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoDireita')}>
+                      <Text style={styles.equipHandBtnText}>Mão D</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoEsquerda')}>
+                      <Text style={styles.equipHandBtnText}>Mão E</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                <TouchableOpacity onPress={() => setShowEquip(false)}>
+                  <Text style={styles.equipCancelText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.equipBtnModal} onPress={() => setShowEquip(true)}>
+                <Text style={styles.equipBtnText}>{isArmor ? '🛡 Equipar' : '⚔ Equipar'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipTo('maoEsquerda')}>
-                <Text style={styles.equipHandBtnText}>Mão E</Text>
+            )
+          )}
+
+          <View style={styles.itemModalActions}>
+            {item.nome ? (
+              <TouchableOpacity style={styles.itemModalClearBtn} onPress={clear}>
+                <Text style={styles.itemModalClearText}>Limpar</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowEquip(false)}>
-                <Text style={styles.equipCancelText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.equipBtn} onPress={() => setShowEquip(true)}>
-              <Text style={styles.equipBtnText}>⚔ Equipar</Text>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.itemModalSaveBtn, !nome.trim() && styles.itemModalSaveBtnDisabled]}
+              onPress={save}
+              disabled={!nome.trim()}
+            >
+              <Text style={styles.itemModalSaveText}>Salvar</Text>
             </TouchableOpacity>
-          )}
-        </>
-      )}
-    </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Item Slot ─────────────────────────────────────────────────────────────────
+function ItemSlot({ index, item, section, storageId, placeholder }) {
+  const [editing, setEditing] = useState(false);
+  const isEmpty  = !item.nome;
+  const isArmor  = !!item.armorData;
+  const isWeapon = !!item.weaponData;
+
+  return (
+    <>
+      <TouchableOpacity
+        style={[styles.slot, isEmpty && styles.slotEmpty]}
+        onPress={() => setEditing(true)}
+        activeOpacity={0.7}
+      >
+        {isEmpty ? (
+          <Text style={styles.slotPlaceholder}>{placeholder ?? '+'}</Text>
+        ) : (
+          <>
+            <Text style={styles.slotName} numberOfLines={2}>{item.nome}</Text>
+            {isWeapon && (
+              <Text style={styles.weaponTag}>
+                ⚔{item.weaponData.nivel > 1 ? ` Nv ${item.weaponData.nivel}` : ''}
+                {item.weaponData.tiras?.length > 0 ? `  🪢 ${item.weaponData.tiras.length}` : ''}
+              </Text>
+            )}
+            {isArmor && (
+              <Text style={styles.armorTag}>
+                🛡{item.armorData.armadura > 0 ? ` ${item.armorData.armadura}` : ''}
+                {item.armorData.resMagica > 0 ? `  ✨ ${item.armorData.resMagica}` : ''}
+                {item.armorData.nivel > 1 ? `  Nv ${item.armorData.nivel}` : ''}
+                {item.armorData.tiras?.length > 0 ? `  🪢 ${item.armorData.tiras.length}` : ''}
+              </Text>
+            )}
+            {!isWeapon && !isArmor && item.obs ? (
+              <Text style={styles.slotObs} numberOfLines={1}>{item.obs}</Text>
+            ) : null}
+          </>
+        )}
+      </TouchableOpacity>
+      <ItemEditModal
+        visible={editing}
+        item={item}
+        index={index}
+        section={section}
+        storageId={storageId}
+        onClose={() => setEditing(false)}
+      />
+    </>
   );
 }
 
@@ -315,7 +437,7 @@ export default function InventoryScreen() {
 
       {/* ── Saco de Moedas ── */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>💰 Moedas</Text>
+        <Text style={styles.sectionTitle}>💰 Gargas</Text>
         <Text style={styles.moedasTotal}>{moedas}</Text>
       </View>
 
@@ -403,16 +525,51 @@ const styles = StyleSheet.create({
   slot: {
     width: '47.5%', backgroundColor: '#1e1e2e',
     borderRadius: 8, borderWidth: 1, borderColor: '#313244',
-    padding: 8,
+    padding: 8, minHeight: 52,
   },
-  slotEmpty: { borderStyle: 'dashed', borderColor: '#2e2e4e' },
-  slotInput: { color: '#cdd6f4', fontSize: 13, padding: 0, fontWeight: '600' },
-  slotObs:   { color: '#6c7086', fontSize: 10, padding: 0, marginTop: 2 },
-  weaponTag:       { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2, marginBottom: 2 },
-  equipBtn:        { marginTop: 5, backgroundColor: '#1d3052', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start' },
-  equipBtnText:    { color: '#89b4fa', fontSize: 10, fontWeight: '700' },
-  equipRow:        { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
-  equipHandBtn:    { backgroundColor: '#1d3a2f', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 },
+  slotEmpty:       { borderStyle: 'dashed', borderColor: '#2e2e4e', justifyContent: 'center', alignItems: 'center' },
+  slotPlaceholder: { color: '#313244', fontSize: 22, fontWeight: '300' },
+  slotName:        { color: '#cdd6f4', fontSize: 13, fontWeight: '600' },
+  slotObs:         { color: '#6c7086', fontSize: 10, marginTop: 2 },
+  weaponTag:       { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  armorTag:        { color: '#89b4fa', fontSize: 10, fontWeight: '600', marginTop: 2 },
+
+  // Item edit modal
+  itemModalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', padding: 24,
+  },
+  itemModalSheet: {
+    backgroundColor: '#1e1e2e', borderRadius: 16,
+    padding: 20, borderWidth: 1, borderColor: '#313244',
+  },
+  itemModalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  itemModalTitle:  { color: '#cdd6f4', fontSize: 16, fontWeight: '700', flex: 1 },
+  itemModalClose:  { color: '#6c7086', fontSize: 18, padding: 4 },
+  itemModalLabel:  { color: '#6c7086', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 4 },
+  itemModalInput: {
+    backgroundColor: '#181825', borderRadius: 8, borderWidth: 1, borderColor: '#313244',
+    color: '#cdd6f4', fontSize: 15, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 14,
+  },
+  itemModalInputObs: { minHeight: 64, textAlignVertical: 'top' },
+  itemModalTag:    { color: '#89b4fa', fontSize: 12, marginBottom: 12 },
+  itemModalActions:{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+  itemModalClearBtn: {
+    borderRadius: 8, borderWidth: 1, borderColor: '#45273a',
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  itemModalClearText: { color: '#f38ba8', fontSize: 14, fontWeight: '600' },
+  itemModalSaveBtn: {
+    backgroundColor: '#1d4d3a', borderRadius: 8,
+    paddingHorizontal: 20, paddingVertical: 10,
+  },
+  itemModalSaveBtnDisabled: { opacity: 0.4 },
+  itemModalSaveText: { color: '#a6e3a1', fontSize: 14, fontWeight: '700' },
+
+  equipBtnModal:   { marginTop: 4, marginBottom: 12, backgroundColor: '#1d3052', borderRadius: 5, paddingHorizontal: 8, paddingVertical: 5, alignSelf: 'flex-start' },
+  equipBtnText:    { color: '#89b4fa', fontSize: 11, fontWeight: '700' },
+  equipRowModal:   { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 12 },
+  equipHandBtn:    { backgroundColor: '#1d3a2f', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 4 },
   equipHandBtnText:{ color: '#a6e3a1', fontSize: 10, fontWeight: '700' },
   equipCancelText: { color: '#45475a', fontSize: 13, paddingHorizontal: 4 },
 
