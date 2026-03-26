@@ -4,8 +4,16 @@ import {
   TextInput, StyleSheet, Switch, Alert, Modal,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
-import { ARMOR_SLOTS, EQUIP_LABELS } from '../data/initialCharacter';
+import { ARMOR_SLOTS, EQUIP_LABELS, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TRAILS_ARMAS } from '../data/trailsData';
+
+const ATTR_SUB_KEYS = ['forca','destreza','vigor','manha','carisma','etiqueta','percepcao','raciocinio','inteligencia'];
+const SKILL_KEYS    = Object.keys(SKILL_LABELS);
+function tiraLabel(t) {
+  if (t.tipo === 'atributo') return `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr} +${t.valor}`;
+  if (t.tipo === 'pericia')  return `${SKILL_LABELS[t.skill]   ?? t.skill}   +${t.valor}`;
+  return t.texto || '—';
+}
 
 // Agrupa trilhas por categoria (igual ao EquipmentScreen)
 const WEAPONS_BY_CAT = TRAILS_ARMAS.reduce((map, t) => {
@@ -24,8 +32,9 @@ const ITEM_TYPES = [
 
 function inferType(item) {
   if (item.weaponData) return 'arma';
-  if (item.armorData)  return 'equipamento';
-  return 'pocao'; // genérico / poção / acessório → tratados igual por ora
+  if (item.armorData)     return 'equipamento';
+  if (item.accessoryData) return 'acessorio';
+  return 'pocao';
 }
 
 // ── Stepper numérico reutilizável ──────────────────────────────────────────────
@@ -48,60 +57,100 @@ function NumStepper({ label, value, onChange, min = 0 }) {
 
 // ── Item Modal (criação + edição) ──────────────────────────────────────────────
 function ItemModal({ visible, item, index, section, storageId, onClose }) {
-  const { dispatch } = useCharacter();
+  const { character, dispatch } = useCharacter();
   const isNew = !item.nome;
 
   // Passo: 'type' (só na criação) | 'form'
-  const [step,  setStep]  = useState('type');
-  const [tipo,  setTipo]  = useState('pocao');
+  const [step, setStep] = useState('type');
+  const [tipo, setTipo] = useState('pocao');
 
   // Campos comuns
-  const [nome,    setNome]    = useState('');
-  const [obs,     setObs]     = useState('');
-  // Arma
-  const [wTrail,  setWTrail]  = useState('');          // trail id
-  const [wNivel,  setWNivel]  = useState(1);
-  const [wDurMax, setWDurMax] = useState(10);
-  const [wEfeitos,setWEfeitos]= useState('');
-  // Equipamento
-  const [eArmadura,setEArmadura] = useState(0);
-  const [eResMag,  setEResMag]   = useState(0);
-  const [eRep,     setERep]      = useState(0);
-  const [eNivel,   setENivel]    = useState(1);
-  const [eDurMax,  setEDurMax]   = useState(10);
-  const [eEfeitos, setEEfeitos]  = useState('');
+  const [nome, setNome] = useState('');
+  const [obs,  setObs]  = useState('');
 
-  // Seleção de slot para equipar (edição)
+  // Arma
+  const [wTrail,   setWTrail]   = useState('');
+  const [wNivel,   setWNivel]   = useState(1);
+  const [wDurMax,  setWDurMax]  = useState(10);
+  const [wEfeitos, setWEfeitos] = useState('');
+  const [wTiras,   setWTiras]   = useState([]);
+
+  // Equipamento
+  const [eSlot,     setESlot]     = useState('');
+  const [eArmadura, setEArmadura] = useState(0);
+  const [eResMag,   setEResMag]   = useState(0);
+  const [eRep,      setERep]      = useState(0);
+  const [eNivel,    setENivel]    = useState(1);
+  const [eDurMax,   setEDurMax]   = useState(10);
+  const [eEfeitos,  setEEfeitos]  = useState('');
+  const [eTiras,    setETiras]    = useState([]);
+
+  // Acessório
+  const [aArmadura, setAArmadura] = useState(0);
+  const [aResMag,   setAResMag]   = useState(0);
+  const [aRep,      setARep]      = useState(0);
+  const [aEfeitos,  setAEfeitos]  = useState('');
+  const [aTiras,    setATiras]    = useState([]);
+  // form de nova tira (compartilhado para arma/equip/acessório)
+  const [tiraTab,   setTiraTab]   = useState('atributo');
+  const [tiraKey,   setTiraKey]   = useState('');
+  const [tiraVal,   setTiraVal]   = useState(1);
+  const [tiraTexto, setTiraTexto] = useState('');
+  // qual campo de tiras está ativo ('wTiras' | 'eTiras' | 'aTiras')
+  const [tiraTarget, setTiraTarget] = useState('aTiras');
+
+  // Seleção de slot para equipar
   const [showEquip, setShowEquip] = useState(false);
+
+  function resetTiraForm() { setTiraKey(''); setTiraVal(1); setTiraTexto(''); }
+
+  function addTira() {
+    let tira = null;
+    if (tiraTab === 'atributo' && tiraKey) tira = { tipo: 'atributo', subAttr: tiraKey, valor: tiraVal };
+    else if (tiraTab === 'pericia' && tiraKey) tira = { tipo: 'pericia', skill: tiraKey, valor: tiraVal };
+    else if (tiraTab === 'narrativa' && tiraTexto.trim()) tira = { tipo: 'narrativa', texto: tiraTexto.trim() };
+    if (!tira) return;
+    if (tiraTarget === 'wTiras') setWTiras(a => [...a, tira]);
+    else if (tiraTarget === 'eTiras') setETiras(a => [...a, tira]);
+    else setATiras(a => [...a, tira]);
+    resetTiraForm();
+  }
+
+  function removeTira(target, i) {
+    if (target === 'wTiras') setWTiras(a => a.filter((_, j) => j !== i));
+    else if (target === 'eTiras') setETiras(a => a.filter((_, j) => j !== i));
+    else setATiras(a => a.filter((_, j) => j !== i));
+  }
 
   useEffect(() => {
     if (!visible) return;
-    setShowEquip(false);
+    setShowEquip(false); resetTiraForm();
     if (isNew) {
       setStep('type'); setTipo('pocao');
       setNome(''); setObs('');
-      setWTrail(''); setWNivel(1); setWDurMax(10); setWEfeitos('');
-      setEArmadura(0); setEResMag(0); setERep(0); setENivel(1); setEDurMax(10); setEEfeitos('');
+      setWTrail(''); setWNivel(1); setWDurMax(10); setWEfeitos(''); setWTiras([]);
+      setESlot(''); setEArmadura(0); setEResMag(0); setERep(0); setENivel(1); setEDurMax(10); setEEfeitos(''); setETiras([]);
+      setAArmadura(0); setAResMag(0); setARep(0); setAEfeitos(''); setATiras([]);
     } else {
       const t = inferType(item);
-      setTipo(t); setStep('form');
-      setNome(item.nome);
-      setObs(item.obs ?? '');
+      setTipo(t); setStep('form'); setNome(item.nome); setObs(item.obs ?? '');
       if (item.weaponData) {
         const wd = item.weaponData;
-        setWTrail(wd.tipo ?? '');
-        setWNivel(wd.nivel ?? 1);
-        setWDurMax(wd.durabilidadeMax ?? 10);
-        setWEfeitos(wd.efeitos ?? '');
+        setWTrail(wd.tipo ?? ''); setWNivel(wd.nivel ?? 1);
+        setWDurMax(wd.durabilidadeMax ?? 10); setWEfeitos(wd.efeitos ?? '');
+        setWTiras(wd.tiras ?? []);
       }
       if (item.armorData) {
         const ad = item.armorData;
-        setEArmadura(ad.armadura ?? 0);
-        setEResMag(ad.resMagica ?? 0);
-        setERep(ad.reputacao ?? 0);
-        setENivel(ad.nivel ?? 1);
-        setEDurMax(ad.durabilidadeMax ?? 10);
-        setEEfeitos(ad.efeitos ?? '');
+        setESlot(ad.slot ?? ''); setEArmadura(ad.armadura ?? 0); setEResMag(ad.resMagica ?? 0);
+        setERep(ad.reputacao ?? 0); setENivel(ad.nivel ?? 1);
+        setEDurMax(ad.durabilidadeMax ?? 10); setEEfeitos(ad.efeitos ?? '');
+        setETiras(ad.tiras ?? []);
+      }
+      if (item.accessoryData) {
+        const ac = item.accessoryData;
+        setAArmadura(ac.armadura ?? 0); setAResMag(ac.resMagica ?? 0); setARep(ac.reputacao ?? 0);
+        setAEfeitos(ac.efeitos ?? ''); setATiras(ac.tiras ?? []);
       }
     }
   }, [visible]);
@@ -115,33 +164,35 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
   function save() {
     dispatchItem('nome', nome.trim());
     if (tipo === 'arma') {
-      const tipo2 = isMachadoId(wTrail) ? 'machado_do_sul' : '';
       dispatchItem('weaponData', {
-        tipo: wTrail, tipo2,
-        dano: '', nivel: wNivel,
-        durabilidade: wDurMax, durabilidadeMax: wDurMax,
-        efeitos: wEfeitos, tiras: [],
+        tipo: wTrail, tipo2: isMachadoId(wTrail) ? 'machado_do_sul' : '',
+        dano: '', nivel: wNivel, durabilidade: wDurMax, durabilidadeMax: wDurMax,
+        efeitos: wEfeitos, tiras: wTiras,
       });
-      dispatchItem('armorData', null);
-      dispatchItem('obs', '');
+      dispatchItem('armorData', null); dispatchItem('accessoryData', null); dispatchItem('obs', '');
     } else if (tipo === 'equipamento') {
       dispatchItem('armorData', {
-        armadura: eArmadura, resMagica: eResMag, reputacao: eRep,
+        slot: eSlot, armadura: eArmadura, resMagica: eResMag, reputacao: eRep,
         nivel: eNivel, durabilidade: eDurMax, durabilidadeMax: eDurMax,
-        efeitos: eEfeitos, tiras: [],
+        efeitos: eEfeitos, tiras: eTiras,
       });
-      dispatchItem('weaponData', null);
-      dispatchItem('obs', '');
+      dispatchItem('weaponData', null); dispatchItem('accessoryData', null); dispatchItem('obs', '');
+    } else if (tipo === 'acessorio') {
+      dispatchItem('accessoryData', {
+        armadura: aArmadura, resMagica: aResMag, reputacao: aRep,
+        efeitos: aEfeitos, tiras: aTiras,
+      });
+      dispatchItem('weaponData', null); dispatchItem('armorData', null); dispatchItem('obs', '');
     } else {
       dispatchItem('obs', obs);
-      dispatchItem('weaponData', null);
-      dispatchItem('armorData', null);
+      dispatchItem('weaponData', null); dispatchItem('armorData', null); dispatchItem('accessoryData', null);
     }
     onClose();
   }
 
   function clear() {
-    ['nome','obs','weaponData','armorData'].forEach(f => dispatchItem(f, f === 'nome' || f === 'obs' ? '' : null));
+    ['nome','obs','weaponData','armorData','accessoryData']
+      .forEach(f => dispatchItem(f, f === 'nome' || f === 'obs' ? '' : null));
     onClose();
   }
 
@@ -157,6 +208,79 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
       ? { type: 'EQUIP_ARMOR_FROM_INVENTORY', storageId, index, slot }
       : { type: 'EQUIP_ARMOR_FROM_INVENTORY', section,   index, slot });
     onClose();
+  }
+
+  function equipAccessoryTo(accIndex) {
+    dispatch(storageId
+      ? { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', storageId, index, accIndex }
+      : { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', section,   index, accIndex });
+    onClose();
+  }
+
+  // UI de tiras inline (arma, equipamento, acessório)
+  function TirasSection({ target, tiras }) {
+    const keys   = tiraTab === 'atributo' ? ATTR_SUB_KEYS : SKILL_KEYS;
+    const labels = tiraTab === 'atributo' ? ATTRIBUTE_LABELS : SKILL_LABELS;
+    const isActive = tiraTarget === target;
+    return (
+      <View style={styles.tirasSection}>
+        <Text style={styles.itemModalLabel}>Bônus (Tiras de Couro)</Text>
+        {tiras.map((t, i) => (
+          <View key={i} style={styles.tiraRow}>
+            <Text style={styles.tiraText}>{tiraLabel(t)}</Text>
+            <TouchableOpacity onPress={() => removeTira(target, i)}>
+              <Text style={styles.tiraRemove}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        {isActive ? (
+          <>
+            <View style={styles.tiraTabs}>
+              {['atributo','pericia','narrativa'].map(t => (
+                <TouchableOpacity key={t} style={[styles.tiraTab, tiraTab === t && styles.tiraTabActive]}
+                  onPress={() => { setTiraTab(t); setTiraKey(''); }}>
+                  <Text style={[styles.tiraTabText, tiraTab === t && styles.tiraTabTextActive]}>
+                    {t === 'atributo' ? 'Atrib.' : t === 'pericia' ? 'Perícia' : 'Narrativa'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {tiraTab === 'narrativa' ? (
+              <TextInput
+                style={[styles.itemModalInput, { marginBottom: 8 }]}
+                value={tiraTexto} onChangeText={setTiraTexto}
+                placeholder="Ex: +5 dano cortante" placeholderTextColor="#45475a"
+              />
+            ) : (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {keys.map(k => (
+                    <TouchableOpacity key={k} style={[styles.trailChip, tiraKey === k && styles.trailChipActive]}
+                      onPress={() => setTiraKey(k)}>
+                      <Text style={[styles.trailChipText, tiraKey === k && styles.trailChipTextActive]}>{labels[k] ?? k}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <NumStepper label="Bônus" value={tiraVal} onChange={setTiraVal} min={1} />
+              </>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              <TouchableOpacity style={styles.tiraAddBtn} onPress={addTira}>
+                <Text style={styles.tiraAddBtnText}>+ Adicionar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.tiraCancelBtn} onPress={() => { setTiraTarget(''); resetTiraForm(); }}>
+                <Text style={styles.tiraCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <TouchableOpacity style={styles.tiraOpenBtn}
+            onPress={() => { setTiraTarget(target); setTiraTab('atributo'); resetTiraForm(); }}>
+            <Text style={styles.tiraOpenBtnText}>+ Tira de bônus</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
   }
 
   const canSave = nome.trim().length > 0;
@@ -213,21 +337,20 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                 autoFocus={isNew}
               />
 
-              {/* Campos específicos por tipo */}
-              {(tipo === 'pocao' || tipo === 'acessorio') && (
+              {/* ── Poção ── */}
+              {tipo === 'pocao' && (
                 <>
                   <Text style={styles.itemModalLabel}>Observação</Text>
                   <TextInput
                     style={[styles.itemModalInput, styles.itemModalInputObs]}
-                    value={obs}
-                    onChangeText={setObs}
+                    value={obs} onChangeText={setObs}
                     placeholder="Descrição, quantidade, efeito..."
-                    placeholderTextColor="#45475a"
-                    multiline
+                    placeholderTextColor="#45475a" multiline
                   />
                 </>
               )}
 
+              {/* ── Arma ── */}
               {tipo === 'arma' && (
                 <>
                   <Text style={styles.itemModalLabel}>Tipo de Arma</Text>
@@ -236,11 +359,9 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                       if (cat === 'MACHADOS') {
                         const active = isMachadoId(wTrail);
                         return (
-                          <TouchableOpacity
-                            key={cat}
+                          <TouchableOpacity key={cat}
                             style={[styles.trailChip, active && styles.trailChipActive]}
-                            onPress={() => setWTrail(active ? '' : 'machado_do_norte')}
-                          >
+                            onPress={() => setWTrail(active ? '' : 'machado_do_norte')}>
                             <Text style={[styles.trailChipText, active && styles.trailChipTextActive]}>Machado</Text>
                           </TouchableOpacity>
                         );
@@ -248,58 +369,85 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                       return trails.map(t => {
                         const active = wTrail === t.id;
                         return (
-                          <TouchableOpacity
-                            key={t.id}
+                          <TouchableOpacity key={t.id}
                             style={[styles.trailChip, active && styles.trailChipActive]}
-                            onPress={() => setWTrail(active ? '' : t.id)}
-                          >
+                            onPress={() => setWTrail(active ? '' : t.id)}>
                             <Text style={[styles.trailChipText, active && styles.trailChipTextActive]}>{t.nome}</Text>
                           </TouchableOpacity>
                         );
                       });
                     })}
                   </ScrollView>
-                  <NumStepper label="Nível"          value={wNivel}  onChange={setWNivel}  min={1} />
-                  <NumStepper label="Durabilidade máx" value={wDurMax} onChange={setWDurMax} min={1} />
+                  <NumStepper label="Nível"            value={wNivel}  onChange={setWNivel}  min={1} />
+                  <NumStepper label="Durabilidade máx"  value={wDurMax} onChange={setWDurMax} min={1} />
                   <Text style={styles.itemModalLabel}>Efeitos</Text>
                   <TextInput
                     style={[styles.itemModalInput, styles.itemModalInputObs]}
-                    value={wEfeitos}
-                    onChangeText={setWEfeitos}
-                    placeholder="Efeitos especiais..."
-                    placeholderTextColor="#45475a"
-                    multiline
+                    value={wEfeitos} onChangeText={setWEfeitos}
+                    placeholder="Efeitos especiais..." placeholderTextColor="#45475a" multiline
                   />
+                  <TirasSection target="wTiras" tiras={wTiras} />
                 </>
               )}
 
+              {/* ── Equipamento ── */}
               {tipo === 'equipamento' && (
                 <>
-                  <NumStepper label="Nível"          value={eNivel}    onChange={setENivel}    min={1} />
-                  <NumStepper label="Armadura"        value={eArmadura} onChange={setEArmadura} />
-                  <NumStepper label="Res. Mágica"     value={eResMag}   onChange={setEResMag}   />
-                  <NumStepper label="Reputação"       value={eRep}      onChange={setERep}      />
-                  <NumStepper label="Durabilidade máx" value={eDurMax}  onChange={setEDurMax}   min={1} />
+                  <Text style={styles.itemModalLabel}>Slot</Text>
+                  <View style={styles.slotChipRow}>
+                    {ARMOR_SLOTS.map(s => (
+                      <TouchableOpacity key={s}
+                        style={[styles.trailChip, eSlot === s && styles.trailChipActive]}
+                        onPress={() => setESlot(eSlot === s ? '' : s)}>
+                        <Text style={[styles.trailChipText, eSlot === s && styles.trailChipTextActive]}>{EQUIP_LABELS[s]}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <NumStepper label="Nível"            value={eNivel}    onChange={setENivel}    min={1} />
+                  <NumStepper label="Armadura"          value={eArmadura} onChange={setEArmadura} />
+                  <NumStepper label="Res. Mágica"       value={eResMag}   onChange={setEResMag}   />
+                  <NumStepper label="Reputação"          value={eRep}      onChange={setERep}      />
+                  <NumStepper label="Durabilidade máx"  value={eDurMax}   onChange={setEDurMax}   min={1} />
                   <Text style={styles.itemModalLabel}>Efeitos</Text>
                   <TextInput
                     style={[styles.itemModalInput, styles.itemModalInputObs]}
-                    value={eEfeitos}
-                    onChangeText={setEEfeitos}
-                    placeholder="Efeitos especiais..."
-                    placeholderTextColor="#45475a"
-                    multiline
+                    value={eEfeitos} onChangeText={setEEfeitos}
+                    placeholder="Efeitos especiais..." placeholderTextColor="#45475a" multiline
                   />
+                  <TirasSection target="eTiras" tiras={eTiras} />
                 </>
               )}
 
-              {/* Botão Equipar (só na edição de arma/equipamento) */}
-              {!isNew && (tipo === 'arma' || tipo === 'equipamento') && (
+              {/* ── Acessório ── */}
+              {tipo === 'acessorio' && (
+                <>
+                  <Text style={styles.itemModalLabel}>Observação</Text>
+                  <TextInput
+                    style={[styles.itemModalInput, styles.itemModalInputObs]}
+                    value={aEfeitos} onChangeText={setAEfeitos}
+                    placeholder="Descrição, efeito narrativo..." placeholderTextColor="#45475a" multiline
+                  />
+                  <NumStepper label="Armadura"    value={aArmadura} onChange={setAArmadura} />
+                  <NumStepper label="Res. Mágica" value={aResMag}   onChange={setAResMag}   />
+                  <NumStepper label="Reputação"   value={aRep}      onChange={setARep}      />
+                  <TirasSection target="aTiras" tiras={aTiras} />
+                </>
+              )}
+
+              {/* ── Botão Equipar ── */}
+              {!isNew && (
                 showEquip ? (
                   <View style={styles.equipRowModal}>
                     {tipo === 'equipamento' ? (
                       ARMOR_SLOTS.map(slot => (
                         <TouchableOpacity key={slot} style={styles.equipHandBtn} onPress={() => equipArmorTo(slot)}>
                           <Text style={styles.equipHandBtnText}>{EQUIP_LABELS[slot]}</Text>
+                        </TouchableOpacity>
+                      ))
+                    ) : tipo === 'acessorio' ? (
+                      character.accessories.slice(0, character.titles?.acquired?.includes('recruta') ? 11 : 10).map((acc, i) => (
+                        <TouchableOpacity key={i} style={styles.equipHandBtn} onPress={() => equipAccessoryTo(i)}>
+                          <Text style={styles.equipHandBtnText}>{i + 1}{acc.nome ? ` · ${acc.nome}` : ''}</Text>
                         </TouchableOpacity>
                       ))
                     ) : (
@@ -316,11 +464,13 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                       <Text style={styles.equipCancelText}>✕</Text>
                     </TouchableOpacity>
                   </View>
-                ) : (
+                ) : (tipo === 'arma' || tipo === 'equipamento' || tipo === 'acessorio') ? (
                   <TouchableOpacity style={styles.equipBtnModal} onPress={() => setShowEquip(true)}>
-                    <Text style={styles.equipBtnText}>{tipo === 'equipamento' ? '🛡 Equipar' : '⚔ Equipar'}</Text>
+                    <Text style={styles.equipBtnText}>
+                      {tipo === 'equipamento' ? '🛡 Equipar' : tipo === 'acessorio' ? '💍 Equipar' : '⚔ Equipar'}
+                    </Text>
                   </TouchableOpacity>
-                )
+                ) : null
               )}
 
               {/* Ações */}
@@ -349,9 +499,10 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
 // ── Item Slot ─────────────────────────────────────────────────────────────────
 function ItemSlot({ index, item, section, storageId, placeholder }) {
   const [editing, setEditing] = useState(false);
-  const isEmpty  = !item.nome;
-  const isArmor  = !!item.armorData;
-  const isWeapon = !!item.weaponData;
+  const isEmpty     = !item.nome;
+  const isWeapon    = !!item.weaponData;
+  const isArmor     = !!item.armorData;
+  const isAccessory = !!item.accessoryData;
 
   return (
     <>
@@ -379,7 +530,14 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
                 {item.armorData.tiras?.length > 0 ? `  🪢 ${item.armorData.tiras.length}` : ''}
               </Text>
             )}
-            {!isWeapon && !isArmor && item.obs ? (
+            {isAccessory && (
+              <Text style={styles.accessoryTag}>
+                💍{item.accessoryData.armadura > 0 ? ` 🛡${item.accessoryData.armadura}` : ''}
+                {item.accessoryData.resMagica > 0 ? ` ✨${item.accessoryData.resMagica}` : ''}
+                {item.accessoryData.tiras?.length > 0 ? `  🪢 ${item.accessoryData.tiras.length}` : ''}
+              </Text>
+            )}
+            {!isWeapon && !isArmor && !isAccessory && item.obs ? (
               <Text style={styles.slotObs} numberOfLines={1}>{item.obs}</Text>
             ) : null}
           </>
@@ -729,8 +887,28 @@ const styles = StyleSheet.create({
   slotPlaceholder: { color: '#313244', fontSize: 22, fontWeight: '300' },
   slotName:        { color: '#cdd6f4', fontSize: 13, fontWeight: '600' },
   slotObs:         { color: '#6c7086', fontSize: 10, marginTop: 2 },
-  weaponTag:       { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2 },
-  armorTag:        { color: '#89b4fa', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  weaponTag:    { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  armorTag:     { color: '#89b4fa', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  accessoryTag: { color: '#cba6f7', fontSize: 10, fontWeight: '600', marginTop: 2 },
+
+  slotChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
+
+  // Tiras inline
+  tirasSection:   { marginBottom: 14 },
+  tiraRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#181825', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 4 },
+  tiraText:       { color: '#cdd6f4', fontSize: 12, flex: 1 },
+  tiraRemove:     { color: '#f38ba8', fontSize: 14, paddingLeft: 8 },
+  tiraTabs:       { flexDirection: 'row', gap: 6, marginBottom: 8 },
+  tiraTab:        { flex: 1, backgroundColor: '#181825', borderRadius: 6, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: '#313244' },
+  tiraTabActive:  { backgroundColor: '#1d3a2f', borderColor: '#a6e3a1' },
+  tiraTabText:    { color: '#6c7086', fontSize: 11, fontWeight: '600' },
+  tiraTabTextActive: { color: '#a6e3a1' },
+  tiraAddBtn:     { flex: 1, backgroundColor: '#1d4d3a', borderRadius: 7, paddingVertical: 8, alignItems: 'center' },
+  tiraAddBtnText: { color: '#a6e3a1', fontSize: 13, fontWeight: '700' },
+  tiraCancelBtn:  { backgroundColor: '#313244', borderRadius: 7, paddingVertical: 8, paddingHorizontal: 16, alignItems: 'center' },
+  tiraCancelBtnText: { color: '#6c7086', fontSize: 13 },
+  tiraOpenBtn:    { borderRadius: 7, borderWidth: 1, borderColor: '#313244', borderStyle: 'dashed', paddingVertical: 8, alignItems: 'center', marginBottom: 8 },
+  tiraOpenBtnText:{ color: '#6c7086', fontSize: 12, fontWeight: '600' },
 
   // Item modal
   itemModalOverlay: {
