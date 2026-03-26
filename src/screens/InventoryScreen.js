@@ -34,15 +34,17 @@ function isMachadoId(id) { return WEAPONS_BY_CAT['MACHADOS']?.some(t => t.id ===
 
 const ITEM_TYPES = [
   { id: 'pocao',       label: 'Poção',       icon: '🧪' },
+  { id: 'especial',    label: 'Item Especial',icon: '✨' },
   { id: 'arma',        label: 'Arma',         icon: '⚔️' },
   { id: 'equipamento', label: 'Equipamento',  icon: '🛡' },
   { id: 'acessorio',   label: 'Acessório',    icon: '💍' },
 ];
 
 function inferType(item) {
-  if (item.weaponData) return 'arma';
+  if (item.weaponData)    return 'arma';
   if (item.armorData)     return 'equipamento';
   if (item.accessoryData) return 'acessorio';
+  if (item.especialData)  return 'especial';
   return 'pocao';
 }
 
@@ -101,7 +103,7 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
   const [aEfeitos,  setAEfeitos]  = useState('');
   const [aTiras,    setATiras]    = useState([]);
 
-  // Poção
+  // Poção e Item Especial (compartilham estrutura de efeitos)
   const [pSubtipo,   setPSubtipo]   = useState('recuperacao');
   const [pEfeitos,   setPEfeitos]   = useState([]);
   const [pDuracao,   setPDuracao]   = useState('');
@@ -109,6 +111,8 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
   const [pFormVal,   setPFormVal]   = useState(1);
   const [pFormTexto, setPFormTexto] = useState('');
   const [pFormOpen,  setPFormOpen]  = useState(false);
+  // Item Especial
+  const [eDesc,      setEDesc]      = useState('');
   // form de nova tira (compartilhado para arma/equip/acessório)
   const [tiraTab,   setTiraTab]   = useState('atributo');
   const [tiraKey,   setTiraKey]   = useState('');
@@ -151,6 +155,7 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
       setESlot(''); setEArmadura(0); setEResMag(0); setERep(0); setENivel(1); setEDurMax(10); setEEfeitos(''); setETiras([]);
       setAArmadura(0); setAResMag(0); setARep(0); setAEfeitos(''); setATiras([]);
       setPSubtipo('recuperacao'); setPEfeitos([]); setPDuracao('');
+      setEDesc('');
     } else {
       const t = inferType(item);
       setTipo(t); setStep('form'); setNome(item.nome); setObs(item.obs ?? '');
@@ -178,6 +183,13 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
         setPEfeitos(pd?.efeitos ?? []);
         setPDuracao(pd?.duracao ?? '');
       }
+      if (t === 'especial') {
+        const ed = item.especialData;
+        setPSubtipo(ed?.tipo ?? 'narrativo');
+        setPEfeitos(ed?.efeitos ?? []);
+        setPDuracao(ed?.duracao ?? '');
+        setEDesc(ed?.desc ?? '');
+      }
     }
   }, [visible]);
 
@@ -195,30 +207,38 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
         dano: '', nivel: wNivel, durabilidade: wDurMax, durabilidadeMax: wDurMax,
         efeitos: wEfeitos, tiras: wTiras,
       });
-      dispatchItem('armorData', null); dispatchItem('accessoryData', null); dispatchItem('obs', '');
+      dispatchItem('armorData', null); dispatchItem('accessoryData', null);
+      dispatchItem('especialData', null); dispatchItem('pocaoData', null); dispatchItem('obs', '');
     } else if (tipo === 'equipamento') {
       dispatchItem('armorData', {
         slot: eSlot, armadura: eArmadura, resMagica: eResMag, reputacao: eRep,
         nivel: eNivel, durabilidade: eDurMax, durabilidadeMax: eDurMax,
         efeitos: eEfeitos, tiras: eTiras,
       });
-      dispatchItem('weaponData', null); dispatchItem('accessoryData', null); dispatchItem('obs', '');
+      dispatchItem('weaponData', null); dispatchItem('accessoryData', null);
+      dispatchItem('especialData', null); dispatchItem('pocaoData', null); dispatchItem('obs', '');
     } else if (tipo === 'acessorio') {
       dispatchItem('accessoryData', {
         armadura: aArmadura, resMagica: aResMag, reputacao: aRep,
         efeitos: aEfeitos, tiras: aTiras,
       });
-      dispatchItem('weaponData', null); dispatchItem('armorData', null); dispatchItem('obs', '');
+      dispatchItem('weaponData', null); dispatchItem('armorData', null);
+      dispatchItem('especialData', null); dispatchItem('pocaoData', null); dispatchItem('obs', '');
+    } else if (tipo === 'especial') {
+      dispatchItem('especialData', { tipo: pSubtipo, efeitos: pEfeitos, duracao: pDuracao, desc: eDesc });
+      dispatchItem('weaponData', null); dispatchItem('armorData', null); dispatchItem('accessoryData', null);
+      dispatchItem('pocaoData', null); dispatchItem('obs', '');
     } else {
       dispatchItem('obs', obs);
       dispatchItem('pocaoData', pEfeitos.length > 0 ? { tipo: pSubtipo, efeitos: pEfeitos, duracao: pDuracao } : null);
       dispatchItem('weaponData', null); dispatchItem('armorData', null); dispatchItem('accessoryData', null);
+      dispatchItem('especialData', null);
     }
     onClose();
   }
 
   function clear() {
-    ['nome','obs','weaponData','armorData','accessoryData','pocaoData']
+    ['nome','obs','weaponData','armorData','accessoryData','pocaoData','especialData']
       .forEach(f => dispatchItem(f, f === 'nome' || f === 'obs' ? '' : null));
     onClose();
   }
@@ -359,7 +379,7 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                 style={styles.itemModalInput}
                 value={nome}
                 onChangeText={setNome}
-                placeholder={`Nome d${tipo === 'arma' ? 'a arma' : tipo === 'equipamento' ? 'o equipamento' : tipo === 'acessorio' ? 'o acessório' : 'a poção'}...`}
+                placeholder={`Nome d${tipo === 'arma' ? 'a arma' : tipo === 'equipamento' ? 'o equipamento' : tipo === 'acessorio' ? 'o acessório' : tipo === 'especial' ? 'o item' : 'a poção'}...`}
                 placeholderTextColor="#45475a"
                 autoFocus={isNew}
               />
@@ -561,6 +581,98 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                 </>
               )}
 
+              {/* ── Item Especial ── */}
+              {tipo === 'especial' && (
+                <>
+                  <Text style={styles.itemModalLabel}>Características</Text>
+                  <View style={styles.slotChipRow}>
+                    {[
+                      { id: 'narrativo', label: '📖 Narrativo' },
+                      { id: 'buff',      label: '⚗️ Bônus' },
+                    ].map(t => (
+                      <TouchableOpacity key={t.id}
+                        style={[styles.trailChip, pSubtipo === t.id && styles.trailChipActive]}
+                        onPress={() => { setPSubtipo(t.id); setPFormKey(''); setPFormOpen(false); }}>
+                        <Text style={[styles.trailChipText, pSubtipo === t.id && styles.trailChipTextActive]}>{t.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Descrição do item */}
+                  <Text style={styles.itemModalLabel}>Descrição</Text>
+                  <TextInput
+                    style={[styles.itemModalInput, styles.itemModalInputObs]}
+                    value={eDesc} onChangeText={setEDesc}
+                    placeholder="Ex: Dente de lobo, Escama de dragão, Orbe iluminado..." placeholderTextColor="#45475a" multiline
+                  />
+
+                  {/* Efeitos */}
+                  <Text style={styles.itemModalLabel}>Efeitos</Text>
+                  {pEfeitos.map((e, i) => (
+                    <View key={i} style={styles.tiraRow}>
+                      <Text style={styles.tiraText}>{formatPocaoEfeitoLabel(e)}</Text>
+                      <TouchableOpacity onPress={() => setPEfeitos(a => a.filter((_, j) => j !== i))}>
+                        <Text style={styles.tiraRemove}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+
+                  {/* Form de adicionar efeito */}
+                  {pFormOpen ? (
+                    <>
+                      {pSubtipo === 'buff' && (
+                        <>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                            {ATTR_SUB_KEYS.map(k => (
+                              <TouchableOpacity key={k}
+                                style={[styles.trailChip, pFormKey === k && styles.trailChipActive]}
+                                onPress={() => setPFormKey(k)}>
+                                <Text style={[styles.trailChipText, pFormKey === k && styles.trailChipTextActive]}>{ATTRIBUTE_LABELS[k] ?? k}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                          <NumStepper label="Bônus" value={pFormVal} onChange={setPFormVal} min={1} />
+                        </>
+                      )}
+                      {pSubtipo === 'narrativo' && (
+                        <TextInput
+                          style={[styles.itemModalInput, { marginBottom: 8 }]}
+                          value={pFormTexto} onChangeText={setPFormTexto}
+                          placeholder="Descreva o efeito..." placeholderTextColor="#45475a"
+                        />
+                      )}
+                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                        <TouchableOpacity style={styles.tiraAddBtn} onPress={() => {
+                          let ef = null;
+                          if (pSubtipo === 'buff' && pFormKey)   ef = { tipo: 'atributo', subAttr: pFormKey, delta: pFormVal };
+                          else if (pSubtipo === 'narrativo' && pFormTexto.trim()) ef = { tipo: 'texto', texto: pFormTexto.trim() };
+                          if (!ef) return;
+                          setPEfeitos(a => [...a, ef]);
+                          setPFormKey(''); setPFormVal(1); setPFormTexto('');
+                        }}>
+                          <Text style={styles.tiraAddBtnText}>+ Adicionar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.tiraCancelBtn} onPress={() => { setPFormOpen(false); setPFormKey(''); setPFormVal(1); setPFormTexto(''); }}>
+                          <Text style={styles.tiraCancelBtnText}>Cancelar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <TouchableOpacity style={styles.tiraOpenBtn} onPress={() => setPFormOpen(true)}>
+                      <Text style={styles.tiraOpenBtnText}>+ Adicionar efeito</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Duração (quando ativado) */}
+                  <Text style={styles.itemModalLabel}>Duração ao ativar (opcional)</Text>
+                  <TextInput
+                    style={styles.itemModalInput}
+                    value={pDuracao} onChangeText={setPDuracao}
+                    placeholder="Ex: 3 rodadas, 1 cena..." placeholderTextColor="#45475a"
+                  />
+                </>
+              )}
+
               {/* ── Botão Equipar ── */}
               {!isNew && (
                 showEquip ? (
@@ -632,7 +744,8 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
   const isWeapon    = !!item.weaponData;
   const isArmor     = !!item.armorData;
   const isAccessory = !!item.accessoryData;
-  const isPocaoAtiva = !isWeapon && !isArmor && !isAccessory && !!item.pocaoData;
+  const isEspecial  = !!item.especialData;
+  const isPocaoAtiva = !isWeapon && !isArmor && !isAccessory && !isEspecial && !!item.pocaoData;
 
   function usarPocao() {
     const pd = item.pocaoData;
@@ -646,6 +759,16 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
         linhas: pd.efeitos ?? [],
       }});
     }
+  }
+
+  function ativarEspecial() {
+    const ed = item.especialData;
+    if (!ed || ed.efeitos?.length === 0) return;
+    dispatch({ type: 'ADD_NARRATIVE_EFFECT', effect: {
+      nome: item.nome,
+      duracao: ed.duracao || '',
+      linhas: ed.efeitos ?? [],
+    }});
   }
 
   function equipWeapon(slot) {
@@ -702,7 +825,12 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
                 {item.accessoryData.tiras?.length > 0 ? `  🪢 ${item.accessoryData.tiras.length}` : ''}
               </Text>
             )}
-            {!isWeapon && !isArmor && !isAccessory && item.pocaoData && item.pocaoData.efeitos?.length > 0 ? (
+            {isEspecial ? (
+              <Text style={styles.slotObs} numberOfLines={2}>
+                ✨{item.especialData.desc ? ` ${item.especialData.desc}` : ''}
+                {item.especialData.efeitos?.length > 0 ? `  ${item.especialData.efeitos.map(e => formatPocaoEfeitoLabel(e)).join(', ')}` : ''}
+              </Text>
+            ) : !isWeapon && !isArmor && !isAccessory && item.pocaoData && item.pocaoData.efeitos?.length > 0 ? (
               <Text style={styles.slotObs} numberOfLines={1}>
                 {item.pocaoData.tipo === 'recuperacao' ? '💊' : item.pocaoData.tipo === 'buff' ? '⚗️' : '📖'}{' '}
                 {item.pocaoData.efeitos.map(e => formatPocaoEfeitoLabel(e)).join(', ')}
@@ -715,6 +843,12 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
             {isPocaoAtiva && (
               <TouchableOpacity style={styles.usarPocaoBtn} onPress={usarPocao}>
                 <Text style={styles.usarPocaoBtnText}>🧪 Usar</Text>
+              </TouchableOpacity>
+            )}
+            {/* ── Botão ativar item especial inline ── */}
+            {isEspecial && item.especialData?.efeitos?.length > 0 && (
+              <TouchableOpacity style={styles.ativarEspecialBtn} onPress={ativarEspecial}>
+                <Text style={styles.ativarEspecialBtnText}>✨ Ativar</Text>
               </TouchableOpacity>
             )}
 
@@ -1142,6 +1276,8 @@ const styles = StyleSheet.create({
   inlineEquipToggleText:     { color: '#89b4fa', fontSize: 10, fontWeight: '700' },
   usarPocaoBtn:              { marginTop: 6, alignSelf: 'flex-start', backgroundColor: '#1a3828', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 },
   usarPocaoBtnText:          { color: '#a6e3a1', fontSize: 10, fontWeight: '700' },
+  ativarEspecialBtn:         { marginTop: 6, alignSelf: 'flex-start', backgroundColor: '#2a2040', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 },
+  ativarEspecialBtnText:     { color: '#cba6f7', fontSize: 10, fontWeight: '700' },
   inlineEquipRow:            { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center' },
   inlineEquipBtn:            { backgroundColor: '#1d3a2f', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3 },
   inlineEquipBtnHighlight:   { backgroundColor: '#2d5a3a', borderWidth: 1, borderColor: '#a6e3a1' },
