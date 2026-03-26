@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
 import StatusCard from '../components/StatusCard';
-import { computeDefenseTotals, COMPUTED_STATUS_KEYS, STATUS_LABELS } from '../data/initialCharacter';
+import { computeDefenseTotals, COMPUTED_STATUS_KEYS, STATUS_LABELS, ATTRIBUTE_LABELS } from '../data/initialCharacter';
 import { TITLE_BY_ID } from '../data/titlesData';
 
 // ─── Modal de Efeito Narrativo ────────────────────────────────────────────────
@@ -264,7 +264,10 @@ export default function HomeScreen() {
         {(character.narrativeEffects ?? []).map((ef, i) => (
           <View key={i} style={styles.effectCard}>
             <View style={styles.effectHeader}>
-              <Text style={styles.effectNome}>{ef.nome}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.effectNome}>{ef.nome}</Text>
+                {!!ef.duracao && <Text style={styles.effectDuracao}>⏱ {ef.duracao}</Text>}
+              </View>
               <TouchableOpacity
                 style={styles.effectRemove}
                 onPress={() => dispatch({ type: 'REMOVE_NARRATIVE_EFFECT', index: i })}
@@ -275,7 +278,9 @@ export default function HomeScreen() {
             {(ef.linhas ?? []).map((l, j) => (
               <Text key={j} style={styles.effectLinha}>
                 {l.tipo === 'status'
-                  ? `• ${STATUS_LABELS[l.statusKey]} ${l.delta > 0 ? '+' : ''}${l.delta}`
+                  ? `• ${STATUS_LABELS[l.statusKey] ?? l.statusKey} ${l.delta > 0 ? '+' : ''}${l.delta}`
+                  : l.tipo === 'atributo'
+                  ? `• ${ATTRIBUTE_LABELS[l.subAttr] ?? l.subAttr} +${l.delta}`
                   : `• ${l.texto}`}
               </Text>
             ))}
@@ -348,7 +353,8 @@ const styles = StyleSheet.create({
   emptyEffects:    { color: '#45475a', fontSize: 12, fontStyle: 'italic', marginBottom: 4 },
   effectCard:      { backgroundColor: '#181825', borderRadius: 8, padding: 10, marginBottom: 6 },
   effectHeader:    { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  effectNome:      { color: '#f9e2af', fontSize: 13, fontWeight: '700', flex: 1 },
+  effectNome:      { color: '#f9e2af', fontSize: 13, fontWeight: '700' },
+  effectDuracao:   { color: '#6c7086', fontSize: 10, marginTop: 1 },
   effectRemove:    { width: 22, height: 22, borderRadius: 11, backgroundColor: '#45273a', alignItems: 'center', justifyContent: 'center' },
   effectRemoveText:{ color: '#f38ba8', fontSize: 12 },
   effectLinha:     { color: '#cdd6f4', fontSize: 12, marginBottom: 2 },
