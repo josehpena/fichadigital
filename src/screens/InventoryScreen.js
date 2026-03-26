@@ -498,17 +498,40 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
 
 // ── Item Slot ─────────────────────────────────────────────────────────────────
 function ItemSlot({ index, item, section, storageId, placeholder }) {
-  const [editing, setEditing] = useState(false);
+  const { dispatch } = useCharacter();
+  const [editing,    setEditing]    = useState(false);
+  const [showEquip,  setShowEquip]  = useState(false);
   const isEmpty     = !item.nome;
   const isWeapon    = !!item.weaponData;
   const isArmor     = !!item.armorData;
   const isAccessory = !!item.accessoryData;
 
+  function equipWeapon(slot) {
+    dispatch(storageId
+      ? { type: 'EQUIP_FROM_INVENTORY', storageId, index, slot }
+      : { type: 'EQUIP_FROM_INVENTORY', section,   index, slot });
+    setShowEquip(false);
+  }
+  function equipArmor(slot) {
+    dispatch(storageId
+      ? { type: 'EQUIP_ARMOR_FROM_INVENTORY', storageId, index, slot }
+      : { type: 'EQUIP_ARMOR_FROM_INVENTORY', section,   index, slot });
+    setShowEquip(false);
+  }
+  function equipAccessory(accIndex) {
+    dispatch(storageId
+      ? { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', storageId, index, accIndex }
+      : { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', section,   index, accIndex });
+    setShowEquip(false);
+  }
+
+  const designatedSlot = item.armorData?.slot; // slot definido na criação
+
   return (
     <>
       <TouchableOpacity
         style={[styles.slot, isEmpty && styles.slotEmpty]}
-        onPress={() => setEditing(true)}
+        onPress={() => { if (!showEquip) setEditing(true); }}
         activeOpacity={0.7}
       >
         {isEmpty ? (
@@ -540,6 +563,56 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
             {!isWeapon && !isArmor && !isAccessory && item.obs ? (
               <Text style={styles.slotObs} numberOfLines={1}>{item.obs}</Text>
             ) : null}
+
+            {/* ── Botões de equipar inline ── */}
+            {(isWeapon || isArmor || isAccessory) && (
+              showEquip ? (
+                <View style={styles.inlineEquipRow}>
+                  {isWeapon && (
+                    <>
+                      <TouchableOpacity style={styles.inlineEquipBtn} onPress={() => equipWeapon('maoDireita')}>
+                        <Text style={styles.inlineEquipBtnText}>Mão D</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.inlineEquipBtn} onPress={() => equipWeapon('maoEsquerda')}>
+                        <Text style={styles.inlineEquipBtnText}>Mão E</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {isArmor && ARMOR_SLOTS.map(slot => (
+                    <TouchableOpacity
+                      key={slot}
+                      style={[styles.inlineEquipBtn, designatedSlot === slot && styles.inlineEquipBtnHighlight]}
+                      onPress={() => equipArmor(slot)}
+                    >
+                      <Text style={[styles.inlineEquipBtnText, designatedSlot === slot && styles.inlineEquipBtnTextHighlight]}>
+                        {EQUIP_LABELS[slot]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                  {isAccessory && [0,1,2,3,4,5,6,7,8,9].map(i => (
+                    <TouchableOpacity key={i} style={styles.inlineEquipBtn} onPress={() => equipAccessory(i)}>
+                      <Text style={styles.inlineEquipBtnText}>{i + 1}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity onPress={() => setShowEquip(false)}>
+                    <Text style={styles.inlineEquipCancel}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.inlineEquipToggle}
+                  onPress={() => setShowEquip(true)}
+                >
+                  <Text style={styles.inlineEquipToggleText}>
+                    {isArmor && designatedSlot
+                      ? `🛡 ${EQUIP_LABELS[designatedSlot]}`
+                      : isArmor ? '🛡 Equipar'
+                      : isWeapon ? '⚔ Equipar'
+                      : '💍 Equipar'}
+                  </Text>
+                </TouchableOpacity>
+              )
+            )}
           </>
         )}
       </TouchableOpacity>
@@ -909,6 +982,16 @@ const styles = StyleSheet.create({
   tiraCancelBtnText: { color: '#6c7086', fontSize: 13 },
   tiraOpenBtn:    { borderRadius: 7, borderWidth: 1, borderColor: '#313244', borderStyle: 'dashed', paddingVertical: 8, alignItems: 'center', marginBottom: 8 },
   tiraOpenBtnText:{ color: '#6c7086', fontSize: 12, fontWeight: '600' },
+
+  // Equip inline no slot
+  inlineEquipToggle:         { marginTop: 6, alignSelf: 'flex-start', backgroundColor: '#1d3052', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 },
+  inlineEquipToggleText:     { color: '#89b4fa', fontSize: 10, fontWeight: '700' },
+  inlineEquipRow:            { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center' },
+  inlineEquipBtn:            { backgroundColor: '#1d3a2f', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3 },
+  inlineEquipBtnHighlight:   { backgroundColor: '#2d5a3a', borderWidth: 1, borderColor: '#a6e3a1' },
+  inlineEquipBtnText:        { color: '#a6e3a1', fontSize: 10, fontWeight: '700' },
+  inlineEquipBtnTextHighlight: { color: '#a6e3a1' },
+  inlineEquipCancel:         { color: '#45475a', fontSize: 13, paddingHorizontal: 4 },
 
   // Item modal
   itemModalOverlay: {
