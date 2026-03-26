@@ -1,147 +1,495 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, StyleSheet, Switch, Alert, Modal,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
-import { ARMOR_SLOTS, EQUIP_LABELS } from '../data/initialCharacter';
+import { ARMOR_SLOTS, EQUIP_LABELS, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
+import { TRAILS_ARMAS } from '../data/trailsData';
 
-// ── Item Edit Modal ────────────────────────────────────────────────────────────
-function ItemEditModal({ visible, item, index, section, storageId, onClose }) {
-  const { dispatch } = useCharacter();
-  const [nome, setNome] = useState(item.nome);
-  const [obs,  setObs]  = useState(item.obs ?? '');
+const ATTR_SUB_KEYS = ['forca','destreza','vigor','manha','carisma','etiqueta','percepcao','raciocinio','inteligencia'];
+const SKILL_KEYS    = Object.keys(SKILL_LABELS);
+function tiraLabel(t) {
+  if (t.tipo === 'atributo') return `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr} +${t.valor}`;
+  if (t.tipo === 'pericia')  return `${SKILL_LABELS[t.skill]   ?? t.skill}   +${t.valor}`;
+  return t.texto || '—';
+}
+
+// Agrupa trilhas por categoria (igual ao EquipmentScreen)
+const WEAPONS_BY_CAT = TRAILS_ARMAS.reduce((map, t) => {
+  if (!map[t.categoria]) map[t.categoria] = [];
+  map[t.categoria].push(t);
+  return map;
+}, {});
+function isMachadoId(id) { return WEAPONS_BY_CAT['MACHADOS']?.some(t => t.id === id) ?? false; }
+
+const ITEM_TYPES = [
+  { id: 'pocao',       label: 'Poção',       icon: '🧪' },
+  { id: 'arma',        label: 'Arma',         icon: '⚔️' },
+  { id: 'equipamento', label: 'Equipamento',  icon: '🛡' },
+  { id: 'acessorio',   label: 'Acessório',    icon: '💍' },
+];
+
+function inferType(item) {
+  if (item.weaponData) return 'arma';
+  if (item.armorData)     return 'equipamento';
+  if (item.accessoryData) return 'acessorio';
+  return 'pocao';
+}
+
+// ── Stepper numérico reutilizável ──────────────────────────────────────────────
+function NumStepper({ label, value, onChange, min = 0 }) {
+  return (
+    <View style={styles.stepperRow}>
+      <Text style={styles.stepperLabel}>{label}</Text>
+      <View style={styles.stepperControls}>
+        <TouchableOpacity style={styles.stepperBtn} onPress={() => onChange(Math.max(min, value - 1))}>
+          <Text style={styles.stepperBtnText}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.stepperVal}>{value}</Text>
+        <TouchableOpacity style={styles.stepperBtn} onPress={() => onChange(value + 1)}>
+          <Text style={styles.stepperBtnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ── Item Modal (criação + edição) ──────────────────────────────────────────────
+function ItemModal({ visible, item, index, section, storageId, onClose }) {
+  const { character, dispatch } = useCharacter();
+  const isNew = !item.nome;
+
+  // Passo: 'type' (só na criação) | 'form'
+  const [step, setStep] = useState('type');
+  const [tipo, setTipo] = useState('pocao');
+
+  // Campos comuns
+  const [nome, setNome] = useState('');
+  const [obs,  setObs]  = useState('');
+
+  // Arma
+  const [wTrail,   setWTrail]   = useState('');
+  const [wNivel,   setWNivel]   = useState(1);
+  const [wDurMax,  setWDurMax]  = useState(10);
+  const [wEfeitos, setWEfeitos] = useState('');
+  const [wTiras,   setWTiras]   = useState([]);
+
+  // Equipamento
+  const [eSlot,     setESlot]     = useState('');
+  const [eArmadura, setEArmadura] = useState(0);
+  const [eResMag,   setEResMag]   = useState(0);
+  const [eRep,      setERep]      = useState(0);
+  const [eNivel,    setENivel]    = useState(1);
+  const [eDurMax,   setEDurMax]   = useState(10);
+  const [eEfeitos,  setEEfeitos]  = useState('');
+  const [eTiras,    setETiras]    = useState([]);
+
+  // Acessório
+  const [aArmadura, setAArmadura] = useState(0);
+  const [aResMag,   setAResMag]   = useState(0);
+  const [aRep,      setARep]      = useState(0);
+  const [aEfeitos,  setAEfeitos]  = useState('');
+  const [aTiras,    setATiras]    = useState([]);
+  // form de nova tira (compartilhado para arma/equip/acessório)
+  const [tiraTab,   setTiraTab]   = useState('atributo');
+  const [tiraKey,   setTiraKey]   = useState('');
+  const [tiraVal,   setTiraVal]   = useState(1);
+  const [tiraTexto, setTiraTexto] = useState('');
+  // qual campo de tiras está ativo ('wTiras' | 'eTiras' | 'aTiras')
+  const [tiraTarget, setTiraTarget] = useState('aTiras');
+
+  // Seleção de slot para equipar
   const [showEquip, setShowEquip] = useState(false);
-  const isArmor  = !!item.armorData;
-  const isWeapon = !!item.weaponData;
 
-  // Sincroniza ao abrir
-  React.useEffect(() => {
-    if (visible) { setNome(item.nome); setObs(item.obs ?? ''); setShowEquip(false); }
+  function resetTiraForm() { setTiraKey(''); setTiraVal(1); setTiraTexto(''); }
+
+  function addTira() {
+    let tira = null;
+    if (tiraTab === 'atributo' && tiraKey) tira = { tipo: 'atributo', subAttr: tiraKey, valor: tiraVal };
+    else if (tiraTab === 'pericia' && tiraKey) tira = { tipo: 'pericia', skill: tiraKey, valor: tiraVal };
+    else if (tiraTab === 'narrativa' && tiraTexto.trim()) tira = { tipo: 'narrativa', texto: tiraTexto.trim() };
+    if (!tira) return;
+    if (tiraTarget === 'wTiras') setWTiras(a => [...a, tira]);
+    else if (tiraTarget === 'eTiras') setETiras(a => [...a, tira]);
+    else setATiras(a => [...a, tira]);
+    resetTiraForm();
+  }
+
+  function removeTira(target, i) {
+    if (target === 'wTiras') setWTiras(a => a.filter((_, j) => j !== i));
+    else if (target === 'eTiras') setETiras(a => a.filter((_, j) => j !== i));
+    else setATiras(a => a.filter((_, j) => j !== i));
+  }
+
+  useEffect(() => {
+    if (!visible) return;
+    setShowEquip(false); resetTiraForm();
+    if (isNew) {
+      setStep('type'); setTipo('pocao');
+      setNome(''); setObs('');
+      setWTrail(''); setWNivel(1); setWDurMax(10); setWEfeitos(''); setWTiras([]);
+      setESlot(''); setEArmadura(0); setEResMag(0); setERep(0); setENivel(1); setEDurMax(10); setEEfeitos(''); setETiras([]);
+      setAArmadura(0); setAResMag(0); setARep(0); setAEfeitos(''); setATiras([]);
+    } else {
+      const t = inferType(item);
+      setTipo(t); setStep('form'); setNome(item.nome); setObs(item.obs ?? '');
+      if (item.weaponData) {
+        const wd = item.weaponData;
+        setWTrail(wd.tipo ?? ''); setWNivel(wd.nivel ?? 1);
+        setWDurMax(wd.durabilidadeMax ?? 10); setWEfeitos(wd.efeitos ?? '');
+        setWTiras(wd.tiras ?? []);
+      }
+      if (item.armorData) {
+        const ad = item.armorData;
+        setESlot(ad.slot ?? ''); setEArmadura(ad.armadura ?? 0); setEResMag(ad.resMagica ?? 0);
+        setERep(ad.reputacao ?? 0); setENivel(ad.nivel ?? 1);
+        setEDurMax(ad.durabilidadeMax ?? 10); setEEfeitos(ad.efeitos ?? '');
+        setETiras(ad.tiras ?? []);
+      }
+      if (item.accessoryData) {
+        const ac = item.accessoryData;
+        setAArmadura(ac.armadura ?? 0); setAResMag(ac.resMagica ?? 0); setARep(ac.reputacao ?? 0);
+        setAEfeitos(ac.efeitos ?? ''); setATiras(ac.tiras ?? []);
+      }
+    }
   }, [visible]);
 
+  function dispatchItem(field, value) {
+    dispatch(storageId
+      ? { type: 'INVENTORY_SET_STORAGE_ITEM', storageId, index, field, value }
+      : { type: 'INVENTORY_SET_ITEM', section, index, field, value });
+  }
+
   function save() {
-    const action = storageId
-      ? { type: 'INVENTORY_SET_STORAGE_ITEM', storageId, index }
-      : { type: 'INVENTORY_SET_ITEM', section, index };
-    dispatch({ ...action, field: 'nome', value: nome.trim() });
-    if (!isWeapon && !isArmor) dispatch({ ...action, field: 'obs', value: obs });
+    dispatchItem('nome', nome.trim());
+    if (tipo === 'arma') {
+      dispatchItem('weaponData', {
+        tipo: wTrail, tipo2: isMachadoId(wTrail) ? 'machado_do_sul' : '',
+        dano: '', nivel: wNivel, durabilidade: wDurMax, durabilidadeMax: wDurMax,
+        efeitos: wEfeitos, tiras: wTiras,
+      });
+      dispatchItem('armorData', null); dispatchItem('accessoryData', null); dispatchItem('obs', '');
+    } else if (tipo === 'equipamento') {
+      dispatchItem('armorData', {
+        slot: eSlot, armadura: eArmadura, resMagica: eResMag, reputacao: eRep,
+        nivel: eNivel, durabilidade: eDurMax, durabilidadeMax: eDurMax,
+        efeitos: eEfeitos, tiras: eTiras,
+      });
+      dispatchItem('weaponData', null); dispatchItem('accessoryData', null); dispatchItem('obs', '');
+    } else if (tipo === 'acessorio') {
+      dispatchItem('accessoryData', {
+        armadura: aArmadura, resMagica: aResMag, reputacao: aRep,
+        efeitos: aEfeitos, tiras: aTiras,
+      });
+      dispatchItem('weaponData', null); dispatchItem('armorData', null); dispatchItem('obs', '');
+    } else {
+      dispatchItem('obs', obs);
+      dispatchItem('weaponData', null); dispatchItem('armorData', null); dispatchItem('accessoryData', null);
+    }
     onClose();
   }
 
   function clear() {
-    const action = storageId
-      ? { type: 'INVENTORY_SET_STORAGE_ITEM', storageId, index }
-      : { type: 'INVENTORY_SET_ITEM', section, index };
-    dispatch({ ...action, field: 'nome', value: '' });
-    dispatch({ ...action, field: 'obs',  value: '' });
+    ['nome','obs','weaponData','armorData','accessoryData']
+      .forEach(f => dispatchItem(f, f === 'nome' || f === 'obs' ? '' : null));
     onClose();
   }
 
   function equipWeaponTo(slot) {
-    if (storageId) dispatch({ type: 'EQUIP_FROM_INVENTORY', storageId, index, slot });
-    else           dispatch({ type: 'EQUIP_FROM_INVENTORY', section,   index, slot });
+    dispatch(storageId
+      ? { type: 'EQUIP_FROM_INVENTORY', storageId, index, slot }
+      : { type: 'EQUIP_FROM_INVENTORY', section,   index, slot });
     onClose();
   }
 
   function equipArmorTo(slot) {
-    if (storageId) dispatch({ type: 'EQUIP_ARMOR_FROM_INVENTORY', storageId, index, slot });
-    else           dispatch({ type: 'EQUIP_ARMOR_FROM_INVENTORY', section,   index, slot });
+    dispatch(storageId
+      ? { type: 'EQUIP_ARMOR_FROM_INVENTORY', storageId, index, slot }
+      : { type: 'EQUIP_ARMOR_FROM_INVENTORY', section,   index, slot });
     onClose();
   }
 
+  function equipAccessoryTo(accIndex) {
+    dispatch(storageId
+      ? { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', storageId, index, accIndex }
+      : { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', section,   index, accIndex });
+    onClose();
+  }
+
+  // UI de tiras inline (arma, equipamento, acessório)
+  function TirasSection({ target, tiras }) {
+    const keys   = tiraTab === 'atributo' ? ATTR_SUB_KEYS : SKILL_KEYS;
+    const labels = tiraTab === 'atributo' ? ATTRIBUTE_LABELS : SKILL_LABELS;
+    const isActive = tiraTarget === target;
+    return (
+      <View style={styles.tirasSection}>
+        <Text style={styles.itemModalLabel}>Bônus (Tiras de Couro)</Text>
+        {tiras.map((t, i) => (
+          <View key={i} style={styles.tiraRow}>
+            <Text style={styles.tiraText}>{tiraLabel(t)}</Text>
+            <TouchableOpacity onPress={() => removeTira(target, i)}>
+              <Text style={styles.tiraRemove}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        {isActive ? (
+          <>
+            <View style={styles.tiraTabs}>
+              {['atributo','pericia','narrativa'].map(t => (
+                <TouchableOpacity key={t} style={[styles.tiraTab, tiraTab === t && styles.tiraTabActive]}
+                  onPress={() => { setTiraTab(t); setTiraKey(''); }}>
+                  <Text style={[styles.tiraTabText, tiraTab === t && styles.tiraTabTextActive]}>
+                    {t === 'atributo' ? 'Atrib.' : t === 'pericia' ? 'Perícia' : 'Narrativa'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {tiraTab === 'narrativa' ? (
+              <TextInput
+                style={[styles.itemModalInput, { marginBottom: 8 }]}
+                value={tiraTexto} onChangeText={setTiraTexto}
+                placeholder="Ex: +5 dano cortante" placeholderTextColor="#45475a"
+              />
+            ) : (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {keys.map(k => (
+                    <TouchableOpacity key={k} style={[styles.trailChip, tiraKey === k && styles.trailChipActive]}
+                      onPress={() => setTiraKey(k)}>
+                      <Text style={[styles.trailChipText, tiraKey === k && styles.trailChipTextActive]}>{labels[k] ?? k}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <NumStepper label="Bônus" value={tiraVal} onChange={setTiraVal} min={1} />
+              </>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              <TouchableOpacity style={styles.tiraAddBtn} onPress={addTira}>
+                <Text style={styles.tiraAddBtnText}>+ Adicionar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.tiraCancelBtn} onPress={() => { setTiraTarget(''); resetTiraForm(); }}>
+                <Text style={styles.tiraCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <TouchableOpacity style={styles.tiraOpenBtn}
+            onPress={() => { setTiraTarget(target); setTiraTab('atributo'); resetTiraForm(); }}>
+            <Text style={styles.tiraOpenBtnText}>+ Tira de bônus</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
+  const canSave = nome.trim().length > 0;
+  const typeLabel = ITEM_TYPES.find(t => t.id === tipo)?.label ?? '';
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.itemModalOverlay}>
         <View style={styles.itemModalSheet}>
+
+          {/* Cabeçalho */}
           <View style={styles.itemModalHeader}>
-            <Text style={styles.itemModalTitle}>{item.nome ? 'Editar Item' : 'Novo Item'}</Text>
+            {step === 'form' && !isNew && <Text style={styles.itemModalTitle}>Editar {typeLabel}</Text>}
+            {step === 'form' &&  isNew && (
+              <TouchableOpacity onPress={() => setStep('type')} style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
+                <Text style={{ color: '#6c7086', fontSize: 16 }}>‹</Text>
+                <Text style={styles.itemModalTitle}>
+                  {ITEM_TYPES.find(t => t.id === tipo)?.icon} Novo {typeLabel}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {step === 'type' && <Text style={styles.itemModalTitle}>Tipo de Item</Text>}
             <TouchableOpacity onPress={onClose}><Text style={styles.itemModalClose}>✕</Text></TouchableOpacity>
           </View>
 
-          <Text style={styles.itemModalLabel}>Nome</Text>
-          <TextInput
-            style={styles.itemModalInput}
-            value={nome}
-            onChangeText={setNome}
-            placeholder="Nome do item..."
-            placeholderTextColor="#45475a"
-            autoFocus={!item.nome}
-          />
+          {/* ── Passo 1: seleção de tipo ── */}
+          {step === 'type' && (
+            <View style={styles.typeGrid}>
+              {ITEM_TYPES.map(t => (
+                <TouchableOpacity
+                  key={t.id}
+                  style={styles.typeBtn}
+                  onPress={() => { setTipo(t.id); setStep('form'); }}
+                >
+                  <Text style={styles.typeBtnIcon}>{t.icon}</Text>
+                  <Text style={styles.typeBtnLabel}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-          {!isWeapon && !isArmor && (
-            <>
-              <Text style={styles.itemModalLabel}>Observação</Text>
+          {/* ── Passo 2: formulário ── */}
+          {step === 'form' && (
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+              {/* Nome */}
+              <Text style={styles.itemModalLabel}>Nome</Text>
               <TextInput
-                style={[styles.itemModalInput, styles.itemModalInputObs]}
-                value={obs}
-                onChangeText={setObs}
-                placeholder="Descrição, quantidade, etc..."
+                style={styles.itemModalInput}
+                value={nome}
+                onChangeText={setNome}
+                placeholder={`Nome d${tipo === 'arma' ? 'a arma' : tipo === 'equipamento' ? 'o equipamento' : tipo === 'acessorio' ? 'o acessório' : 'a poção'}...`}
                 placeholderTextColor="#45475a"
-                multiline
+                autoFocus={isNew}
               />
-            </>
-          )}
 
-          {isWeapon && (
-            <Text style={styles.itemModalTag}>
-              ⚔{item.weaponData.nivel > 1 ? ` Nv ${item.weaponData.nivel}` : ''}
-              {item.weaponData.tiras?.length > 0 ? `  🪢 ${item.weaponData.tiras.length}` : ''}
-            </Text>
-          )}
-          {isArmor && (
-            <Text style={styles.itemModalTag}>
-              🛡{item.armorData.armadura > 0 ? ` ${item.armorData.armadura}` : ''}
-              {item.armorData.resMagica > 0 ? `  ✨ ${item.armorData.resMagica}` : ''}
-              {item.armorData.nivel > 1 ? `  Nv ${item.armorData.nivel}` : ''}
-              {item.armorData.tiras?.length > 0 ? `  🪢 ${item.armorData.tiras.length}` : ''}
-            </Text>
-          )}
+              {/* ── Poção ── */}
+              {tipo === 'pocao' && (
+                <>
+                  <Text style={styles.itemModalLabel}>Observação</Text>
+                  <TextInput
+                    style={[styles.itemModalInput, styles.itemModalInputObs]}
+                    value={obs} onChangeText={setObs}
+                    placeholder="Descrição, quantidade, efeito..."
+                    placeholderTextColor="#45475a" multiline
+                  />
+                </>
+              )}
 
-          {(isWeapon || isArmor) && (
-            showEquip ? (
-              <View style={styles.equipRowModal}>
-                {isArmor ? (
-                  ARMOR_SLOTS.map(slot => (
-                    <TouchableOpacity key={slot} style={styles.equipHandBtn} onPress={() => equipArmorTo(slot)}>
-                      <Text style={styles.equipHandBtnText}>{EQUIP_LABELS[slot]}</Text>
+              {/* ── Arma ── */}
+              {tipo === 'arma' && (
+                <>
+                  <Text style={styles.itemModalLabel}>Tipo de Arma</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                    {Object.entries(WEAPONS_BY_CAT).map(([cat, trails]) => {
+                      if (cat === 'MACHADOS') {
+                        const active = isMachadoId(wTrail);
+                        return (
+                          <TouchableOpacity key={cat}
+                            style={[styles.trailChip, active && styles.trailChipActive]}
+                            onPress={() => setWTrail(active ? '' : 'machado_do_norte')}>
+                            <Text style={[styles.trailChipText, active && styles.trailChipTextActive]}>Machado</Text>
+                          </TouchableOpacity>
+                        );
+                      }
+                      return trails.map(t => {
+                        const active = wTrail === t.id;
+                        return (
+                          <TouchableOpacity key={t.id}
+                            style={[styles.trailChip, active && styles.trailChipActive]}
+                            onPress={() => setWTrail(active ? '' : t.id)}>
+                            <Text style={[styles.trailChipText, active && styles.trailChipTextActive]}>{t.nome}</Text>
+                          </TouchableOpacity>
+                        );
+                      });
+                    })}
+                  </ScrollView>
+                  <NumStepper label="Nível"            value={wNivel}  onChange={setWNivel}  min={1} />
+                  <NumStepper label="Durabilidade máx"  value={wDurMax} onChange={setWDurMax} min={1} />
+                  <Text style={styles.itemModalLabel}>Efeitos</Text>
+                  <TextInput
+                    style={[styles.itemModalInput, styles.itemModalInputObs]}
+                    value={wEfeitos} onChangeText={setWEfeitos}
+                    placeholder="Efeitos especiais..." placeholderTextColor="#45475a" multiline
+                  />
+                  <TirasSection target="wTiras" tiras={wTiras} />
+                </>
+              )}
+
+              {/* ── Equipamento ── */}
+              {tipo === 'equipamento' && (
+                <>
+                  <Text style={styles.itemModalLabel}>Slot</Text>
+                  <View style={styles.slotChipRow}>
+                    {ARMOR_SLOTS.map(s => (
+                      <TouchableOpacity key={s}
+                        style={[styles.trailChip, eSlot === s && styles.trailChipActive]}
+                        onPress={() => setESlot(eSlot === s ? '' : s)}>
+                        <Text style={[styles.trailChipText, eSlot === s && styles.trailChipTextActive]}>{EQUIP_LABELS[s]}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <NumStepper label="Nível"            value={eNivel}    onChange={setENivel}    min={1} />
+                  <NumStepper label="Armadura"          value={eArmadura} onChange={setEArmadura} />
+                  <NumStepper label="Res. Mágica"       value={eResMag}   onChange={setEResMag}   />
+                  <NumStepper label="Reputação"          value={eRep}      onChange={setERep}      />
+                  <NumStepper label="Durabilidade máx"  value={eDurMax}   onChange={setEDurMax}   min={1} />
+                  <Text style={styles.itemModalLabel}>Efeitos</Text>
+                  <TextInput
+                    style={[styles.itemModalInput, styles.itemModalInputObs]}
+                    value={eEfeitos} onChangeText={setEEfeitos}
+                    placeholder="Efeitos especiais..." placeholderTextColor="#45475a" multiline
+                  />
+                  <TirasSection target="eTiras" tiras={eTiras} />
+                </>
+              )}
+
+              {/* ── Acessório ── */}
+              {tipo === 'acessorio' && (
+                <>
+                  <Text style={styles.itemModalLabel}>Observação</Text>
+                  <TextInput
+                    style={[styles.itemModalInput, styles.itemModalInputObs]}
+                    value={aEfeitos} onChangeText={setAEfeitos}
+                    placeholder="Descrição, efeito narrativo..." placeholderTextColor="#45475a" multiline
+                  />
+                  <NumStepper label="Armadura"    value={aArmadura} onChange={setAArmadura} />
+                  <NumStepper label="Res. Mágica" value={aResMag}   onChange={setAResMag}   />
+                  <NumStepper label="Reputação"   value={aRep}      onChange={setARep}      />
+                  <TirasSection target="aTiras" tiras={aTiras} />
+                </>
+              )}
+
+              {/* ── Botão Equipar ── */}
+              {!isNew && (
+                showEquip ? (
+                  <View style={styles.equipRowModal}>
+                    {tipo === 'equipamento' ? (
+                      ARMOR_SLOTS.map(slot => (
+                        <TouchableOpacity key={slot} style={styles.equipHandBtn} onPress={() => equipArmorTo(slot)}>
+                          <Text style={styles.equipHandBtnText}>{EQUIP_LABELS[slot]}</Text>
+                        </TouchableOpacity>
+                      ))
+                    ) : tipo === 'acessorio' ? (
+                      character.accessories.slice(0, character.titles?.acquired?.includes('recruta') ? 11 : 10).map((acc, i) => (
+                        <TouchableOpacity key={i} style={styles.equipHandBtn} onPress={() => equipAccessoryTo(i)}>
+                          <Text style={styles.equipHandBtnText}>{i + 1}{acc.nome ? ` · ${acc.nome}` : ''}</Text>
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <>
+                        <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoDireita')}>
+                          <Text style={styles.equipHandBtnText}>Mão D</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoEsquerda')}>
+                          <Text style={styles.equipHandBtnText}>Mão E</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    <TouchableOpacity onPress={() => setShowEquip(false)}>
+                      <Text style={styles.equipCancelText}>✕</Text>
                     </TouchableOpacity>
-                  ))
-                ) : (
-                  <>
-                    <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoDireita')}>
-                      <Text style={styles.equipHandBtnText}>Mão D</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoEsquerda')}>
-                      <Text style={styles.equipHandBtnText}>Mão E</Text>
-                    </TouchableOpacity>
-                  </>
+                  </View>
+                ) : (tipo === 'arma' || tipo === 'equipamento' || tipo === 'acessorio') ? (
+                  <TouchableOpacity style={styles.equipBtnModal} onPress={() => setShowEquip(true)}>
+                    <Text style={styles.equipBtnText}>
+                      {tipo === 'equipamento' ? '🛡 Equipar' : tipo === 'acessorio' ? '💍 Equipar' : '⚔ Equipar'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null
+              )}
+
+              {/* Ações */}
+              <View style={styles.itemModalActions}>
+                {!isNew && (
+                  <TouchableOpacity style={styles.itemModalClearBtn} onPress={clear}>
+                    <Text style={styles.itemModalClearText}>Limpar</Text>
+                  </TouchableOpacity>
                 )}
-                <TouchableOpacity onPress={() => setShowEquip(false)}>
-                  <Text style={styles.equipCancelText}>✕</Text>
+                <TouchableOpacity
+                  style={[styles.itemModalSaveBtn, !canSave && styles.itemModalSaveBtnDisabled]}
+                  onPress={save}
+                  disabled={!canSave}
+                >
+                  <Text style={styles.itemModalSaveText}>Salvar</Text>
                 </TouchableOpacity>
               </View>
-            ) : (
-              <TouchableOpacity style={styles.equipBtnModal} onPress={() => setShowEquip(true)}>
-                <Text style={styles.equipBtnText}>{isArmor ? '🛡 Equipar' : '⚔ Equipar'}</Text>
-              </TouchableOpacity>
-            )
+            </ScrollView>
           )}
-
-          <View style={styles.itemModalActions}>
-            {item.nome ? (
-              <TouchableOpacity style={styles.itemModalClearBtn} onPress={clear}>
-                <Text style={styles.itemModalClearText}>Limpar</Text>
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              style={[styles.itemModalSaveBtn, !nome.trim() && styles.itemModalSaveBtnDisabled]}
-              onPress={save}
-              disabled={!nome.trim()}
-            >
-              <Text style={styles.itemModalSaveText}>Salvar</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </View>
     </Modal>
@@ -151,9 +499,10 @@ function ItemEditModal({ visible, item, index, section, storageId, onClose }) {
 // ── Item Slot ─────────────────────────────────────────────────────────────────
 function ItemSlot({ index, item, section, storageId, placeholder }) {
   const [editing, setEditing] = useState(false);
-  const isEmpty  = !item.nome;
-  const isArmor  = !!item.armorData;
-  const isWeapon = !!item.weaponData;
+  const isEmpty     = !item.nome;
+  const isWeapon    = !!item.weaponData;
+  const isArmor     = !!item.armorData;
+  const isAccessory = !!item.accessoryData;
 
   return (
     <>
@@ -181,13 +530,20 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
                 {item.armorData.tiras?.length > 0 ? `  🪢 ${item.armorData.tiras.length}` : ''}
               </Text>
             )}
-            {!isWeapon && !isArmor && item.obs ? (
+            {isAccessory && (
+              <Text style={styles.accessoryTag}>
+                💍{item.accessoryData.armadura > 0 ? ` 🛡${item.accessoryData.armadura}` : ''}
+                {item.accessoryData.resMagica > 0 ? ` ✨${item.accessoryData.resMagica}` : ''}
+                {item.accessoryData.tiras?.length > 0 ? `  🪢 ${item.accessoryData.tiras.length}` : ''}
+              </Text>
+            )}
+            {!isWeapon && !isArmor && !isAccessory && item.obs ? (
               <Text style={styles.slotObs} numberOfLines={1}>{item.obs}</Text>
             ) : null}
           </>
         )}
       </TouchableOpacity>
-      <ItemEditModal
+      <ItemModal
         visible={editing}
         item={item}
         index={index}
@@ -531,29 +887,80 @@ const styles = StyleSheet.create({
   slotPlaceholder: { color: '#313244', fontSize: 22, fontWeight: '300' },
   slotName:        { color: '#cdd6f4', fontSize: 13, fontWeight: '600' },
   slotObs:         { color: '#6c7086', fontSize: 10, marginTop: 2 },
-  weaponTag:       { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2 },
-  armorTag:        { color: '#89b4fa', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  weaponTag:    { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  armorTag:     { color: '#89b4fa', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  accessoryTag: { color: '#cba6f7', fontSize: 10, fontWeight: '600', marginTop: 2 },
 
-  // Item edit modal
+  slotChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
+
+  // Tiras inline
+  tirasSection:   { marginBottom: 14 },
+  tiraRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#181825', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 4 },
+  tiraText:       { color: '#cdd6f4', fontSize: 12, flex: 1 },
+  tiraRemove:     { color: '#f38ba8', fontSize: 14, paddingLeft: 8 },
+  tiraTabs:       { flexDirection: 'row', gap: 6, marginBottom: 8 },
+  tiraTab:        { flex: 1, backgroundColor: '#181825', borderRadius: 6, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: '#313244' },
+  tiraTabActive:  { backgroundColor: '#1d3a2f', borderColor: '#a6e3a1' },
+  tiraTabText:    { color: '#6c7086', fontSize: 11, fontWeight: '600' },
+  tiraTabTextActive: { color: '#a6e3a1' },
+  tiraAddBtn:     { flex: 1, backgroundColor: '#1d4d3a', borderRadius: 7, paddingVertical: 8, alignItems: 'center' },
+  tiraAddBtnText: { color: '#a6e3a1', fontSize: 13, fontWeight: '700' },
+  tiraCancelBtn:  { backgroundColor: '#313244', borderRadius: 7, paddingVertical: 8, paddingHorizontal: 16, alignItems: 'center' },
+  tiraCancelBtnText: { color: '#6c7086', fontSize: 13 },
+  tiraOpenBtn:    { borderRadius: 7, borderWidth: 1, borderColor: '#313244', borderStyle: 'dashed', paddingVertical: 8, alignItems: 'center', marginBottom: 8 },
+  tiraOpenBtnText:{ color: '#6c7086', fontSize: 12, fontWeight: '600' },
+
+  // Item modal
   itemModalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center', padding: 24,
+    justifyContent: 'flex-end',
   },
   itemModalSheet: {
-    backgroundColor: '#1e1e2e', borderRadius: 16,
-    padding: 20, borderWidth: 1, borderColor: '#313244',
+    backgroundColor: '#1e1e2e', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingBottom: 36, maxHeight: '85%',
+    borderTopWidth: 1, borderColor: '#313244',
   },
-  itemModalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  itemModalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   itemModalTitle:  { color: '#cdd6f4', fontSize: 16, fontWeight: '700', flex: 1 },
   itemModalClose:  { color: '#6c7086', fontSize: 18, padding: 4 },
-  itemModalLabel:  { color: '#6c7086', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 4 },
+
+  // Seleção de tipo
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
+  typeBtn: {
+    width: '47%', backgroundColor: '#181825', borderRadius: 12,
+    borderWidth: 1, borderColor: '#313244',
+    paddingVertical: 20, alignItems: 'center', gap: 6,
+  },
+  typeBtnIcon:  { fontSize: 28 },
+  typeBtnLabel: { color: '#cdd6f4', fontSize: 14, fontWeight: '600' },
+
+  // Formulário
+  itemModalLabel: { color: '#6c7086', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 4 },
   itemModalInput: {
     backgroundColor: '#181825', borderRadius: 8, borderWidth: 1, borderColor: '#313244',
     color: '#cdd6f4', fontSize: 15, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 14,
   },
   itemModalInputObs: { minHeight: 64, textAlignVertical: 'top' },
-  itemModalTag:    { color: '#89b4fa', fontSize: 12, marginBottom: 12 },
-  itemModalActions:{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+
+  // Trail chips (seleção de arma)
+  trailChip: {
+    backgroundColor: '#181825', borderRadius: 8, borderWidth: 1, borderColor: '#313244',
+    paddingHorizontal: 12, paddingVertical: 6, marginRight: 6,
+  },
+  trailChipActive:    { backgroundColor: '#1d3a2f', borderColor: '#a6e3a1' },
+  trailChipText:      { color: '#6c7086', fontSize: 12, fontWeight: '600' },
+  trailChipTextActive:{ color: '#a6e3a1' },
+
+  // Stepper numérico
+  stepperRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  stepperLabel:   { color: '#cdd6f4', fontSize: 14, flex: 1 },
+  stepperControls:{ flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepperBtn:     { backgroundColor: '#313244', borderRadius: 6, width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  stepperBtnText: { color: '#cdd6f4', fontSize: 16, fontWeight: '700', lineHeight: 20 },
+  stepperVal:     { color: '#cdd6f4', fontSize: 15, fontWeight: '700', minWidth: 24, textAlign: 'center' },
+
+  // Ações
+  itemModalActions:{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 8 },
   itemModalClearBtn: {
     borderRadius: 8, borderWidth: 1, borderColor: '#45273a',
     paddingHorizontal: 16, paddingVertical: 10,

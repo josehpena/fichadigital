@@ -411,6 +411,62 @@ function reducer(state, action) {
       };
     }
 
+    // { index }  — move acessório para bolsa preservando todos os dados
+    case 'UNEQUIP_ACCESSORY_TO_INVENTORY': {
+      const acc = state.accessories[action.index];
+      if (!acc?.nome) return state;
+      const bolsa = state.inventory.bolsa;
+      const emptyIdx = bolsa.itens.findIndex((it, i) => !it.nome && i < bolsa.capacidade);
+      if (emptyIdx === -1) return state;
+      const newItens = [...bolsa.itens];
+      newItens[emptyIdx] = {
+        nome: acc.nome,
+        obs: '',
+        accessoryData: {
+          armadura:  acc.armadura  ?? 0,
+          resMagica: acc.resMagica ?? 0,
+          reputacao: acc.reputacao ?? 0,
+          efeitos:   acc.efeitos   ?? '',
+          tiras:     acc.tiras     ?? [],
+        },
+      };
+      const accessories = [...state.accessories];
+      accessories[action.index] = { nome: '', armadura: 0, resMagica: 0, reputacao: 0, efeitos: '', tiras: [] };
+      return {
+        ...state,
+        inventory: { ...state.inventory, bolsa: { ...bolsa, itens: newItens } },
+        accessories,
+      };
+    }
+
+    // { section?, storageId?, index, accIndex }  — equipa acessório do inventário
+    case 'EQUIP_ACCESSORY_FROM_INVENTORY': {
+      let item, newInventory;
+      if (action.storageId) {
+        const storages = (state.inventory.storages ?? []).map(s => {
+          if (s.id !== action.storageId) return s;
+          item = s.itens[action.index];
+          const newItens = [...s.itens];
+          newItens[action.index] = { nome: '', obs: '' };
+          return { ...s, itens: newItens };
+        });
+        if (!item?.nome) return state;
+        newInventory = { ...state.inventory, storages };
+      } else {
+        const inv = state.inventory[action.section];
+        item = inv.itens[action.index];
+        if (!item?.nome) return state;
+        const newItens = [...inv.itens];
+        newItens[action.index] = { nome: '', obs: '' };
+        newInventory = { ...state.inventory, [action.section]: { ...inv, itens: newItens } };
+      }
+      const accessories = [...state.accessories];
+      accessories[action.accIndex] = item.accessoryData
+        ? { nome: item.nome, ...item.accessoryData }
+        : { nome: item.nome, armadura: 0, resMagica: 0, reputacao: 0, efeitos: item.obs ?? '', tiras: [] };
+      return { ...state, inventory: newInventory, accessories };
+    }
+
     // ── Acessórios ───────────────────────────────────────────────────────────
 
     // { index, field, value }

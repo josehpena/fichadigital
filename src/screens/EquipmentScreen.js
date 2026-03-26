@@ -692,6 +692,15 @@ function AccessoryCard({ index }) {
               ))}
             </View>
           )}
+          {acc.nome && (
+            <TouchableOpacity
+              style={[styles.unequipBtn, { marginTop: 8 }]}
+              onPress={() => dispatch({ type: 'UNEQUIP_ACCESSORY_TO_INVENTORY', index })}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.unequipBtnText}>→ Inventário</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
