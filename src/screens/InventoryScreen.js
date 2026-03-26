@@ -345,7 +345,7 @@ export default function InventoryScreen() {
 
       {/* ── Saco de Moedas ── */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>💰 Moedas</Text>
+        <Text style={styles.sectionTitle}>💰 Gargas</Text>
         <Text style={styles.moedasTotal}>{moedas}</Text>
       </View>
 
