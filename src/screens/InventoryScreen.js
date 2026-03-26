@@ -4,18 +4,30 @@ import {
   TextInput, StyleSheet, Switch, Alert, Modal,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
+import { ARMOR_SLOTS, EQUIP_LABELS } from '../data/initialCharacter';
 
 // ── Item Slot ─────────────────────────────────────────────────────────────────
 function ItemSlot({ index, item, section, storageId, placeholder }) {
   const { dispatch } = useCharacter();
   const [showEquip, setShowEquip] = useState(false);
   const isEmpty = !item.nome;
+  const isArmor  = !!item.armorData;
+  const isWeapon = !!item.weaponData;
 
-  function equipTo(slot) {
+  function equipWeaponTo(slot) {
     if (storageId) {
       dispatch({ type: 'EQUIP_FROM_INVENTORY', storageId, index, slot });
     } else {
       dispatch({ type: 'EQUIP_FROM_INVENTORY', section, index, slot });
+    }
+    setShowEquip(false);
+  }
+
+  function equipArmorTo(slot) {
+    if (storageId) {
+      dispatch({ type: 'EQUIP_ARMOR_FROM_INVENTORY', storageId, index, slot });
+    } else {
+      dispatch({ type: 'EQUIP_ARMOR_FROM_INVENTORY', section, index, slot });
     }
     setShowEquip(false);
   }
@@ -39,13 +51,21 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
       />
       {!isEmpty && (
         <>
-          {item.weaponData && (
+          {isWeapon && (
             <Text style={styles.weaponTag}>
               ⚔{item.weaponData.nivel > 1 ? ` Nv ${item.weaponData.nivel}` : ''}
               {item.weaponData.tiras?.length > 0 ? `  🪢 ${item.weaponData.tiras.length}` : ''}
             </Text>
           )}
-          {!item.weaponData && (
+          {isArmor && (
+            <Text style={styles.armorTag}>
+              🛡{item.armorData.armadura > 0 ? ` ${item.armorData.armadura}` : ''}
+              {item.armorData.resMagica > 0 ? `  ✨ ${item.armorData.resMagica}` : ''}
+              {item.armorData.nivel > 1 ? `  Nv ${item.armorData.nivel}` : ''}
+              {item.armorData.tiras?.length > 0 ? `  🪢 ${item.armorData.tiras.length}` : ''}
+            </Text>
+          )}
+          {!isWeapon && !isArmor && (
             <TextInput
               style={styles.slotObs}
               value={item.obs}
@@ -56,19 +76,29 @@ function ItemSlot({ index, item, section, storageId, placeholder }) {
           )}
           {showEquip ? (
             <View style={styles.equipRow}>
-              <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipTo('maoDireita')}>
-                <Text style={styles.equipHandBtnText}>Mão D</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipTo('maoEsquerda')}>
-                <Text style={styles.equipHandBtnText}>Mão E</Text>
-              </TouchableOpacity>
+              {isArmor ? (
+                ARMOR_SLOTS.map(slot => (
+                  <TouchableOpacity key={slot} style={styles.equipHandBtn} onPress={() => equipArmorTo(slot)}>
+                    <Text style={styles.equipHandBtnText}>{EQUIP_LABELS[slot]}</Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoDireita')}>
+                    <Text style={styles.equipHandBtnText}>Mão D</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.equipHandBtn} onPress={() => equipWeaponTo('maoEsquerda')}>
+                    <Text style={styles.equipHandBtnText}>Mão E</Text>
+                  </TouchableOpacity>
+                </>
+              )}
               <TouchableOpacity onPress={() => setShowEquip(false)}>
                 <Text style={styles.equipCancelText}>✕</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity style={styles.equipBtn} onPress={() => setShowEquip(true)}>
-              <Text style={styles.equipBtnText}>⚔ Equipar</Text>
+              <Text style={styles.equipBtnText}>{isArmor ? '🛡 Equipar' : '⚔ Equipar'}</Text>
             </TouchableOpacity>
           )}
         </>
@@ -409,6 +439,7 @@ const styles = StyleSheet.create({
   slotInput: { color: '#cdd6f4', fontSize: 13, padding: 0, fontWeight: '600' },
   slotObs:   { color: '#6c7086', fontSize: 10, padding: 0, marginTop: 2 },
   weaponTag:       { color: '#fab387', fontSize: 10, fontWeight: '600', marginTop: 2, marginBottom: 2 },
+  armorTag:        { color: '#89b4fa', fontSize: 10, fontWeight: '600', marginTop: 2, marginBottom: 2 },
   equipBtn:        { marginTop: 5, backgroundColor: '#1d3052', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start' },
   equipBtnText:    { color: '#89b4fa', fontSize: 10, fontWeight: '700' },
   equipRow:        { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
