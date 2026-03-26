@@ -239,7 +239,7 @@ function getAllBlockSkills(equipment, acquiredTrails) {
     const eq = equipment[slotKey];
     if (!eq?.tipo && !eq?.nome) continue;
     const isShield = trailById(eq.tipo)?.categoria === 'ESCUDOS';
-    const wSkills = getWeaponSkills(eq.tipo, acquiredTrails);
+    const wSkills = getWeaponSkills(eq.tipo, acquiredTrails, eq.tipo2);
     // Para escudos: todas as skills são relevantes para bloqueio
     // Para outras armas: só as que têm block mod
     const relevant = isShield
@@ -345,19 +345,31 @@ function isMagicWeapon(tipoId) {
 }
 
 // Retorna skills adquiridas da trilha da arma equipada com descrições por nível
-function getWeaponSkills(tipoId, acquiredTrails) {
-  if (!tipoId || !acquiredTrails?.[tipoId]) return [];
-  const trail = TRAILS_ARMAS.find(t => t.id === tipoId);
-  if (!trail) return [];
-  const trailData = acquiredTrails[tipoId];
-  return trail.skills
-    .map(sk => ({
-      id:     sk.id,
-      nome:   sk.nome,
-      level:  trailData.skills?.[sk.id] ?? 0,
-      niveis: sk.niveis ?? {},
-    }))
-    .filter(sk => sk.level > 0);
+function getWeaponSkills(tipoId, acquiredTrails, tipo2Id) {
+  function skillsForTrail(id) {
+    if (!id || !acquiredTrails?.[id]) return [];
+    const trail = TRAILS_ARMAS.find(t => t.id === id);
+    if (!trail) return [];
+    const trailData = acquiredTrails[id];
+    return trail.skills
+      .map(sk => ({
+        id:     sk.id,
+        nome:   sk.nome,
+        level:  trailData.skills?.[sk.id] ?? 0,
+        niveis: sk.niveis ?? {},
+      }))
+      .filter(sk => sk.level > 0);
+  }
+  const primary   = skillsForTrail(tipoId);
+  const secondary = skillsForTrail(tipo2Id);
+  // Mescla sem duplicatas (prioriza o nível mais alto se a mesma skill aparecer nas duas trilhas)
+  const merged = [...primary];
+  for (const sk of secondary) {
+    const existing = merged.find(s => s.id === sk.id);
+    if (!existing) merged.push(sk);
+    else if (sk.level > existing.level) existing.level = sk.level;
+  }
+  return merged;
 }
 
 // Retorna todas as magias adquiridas
@@ -461,7 +473,7 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
   }
 
   const acquiredSkills = weapon
-    ? getWeaponSkills(weapon.tipo, character.skillTree?.acquiredTrails)
+    ? getWeaponSkills(weapon.tipo, character.skillTree?.acquiredTrails, weapon.tipo2)
     : [];
 
   // Bônus de dano de habilidades selecionadas
