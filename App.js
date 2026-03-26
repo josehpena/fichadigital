@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, TouchableOpacity, View, ActivityIndicator, StyleSheet } from 'react-native';
 
 import { CharacterProvider } from './src/context/CharacterContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import HomeScreen          from './src/screens/HomeScreen';
 import AttributesScreen    from './src/screens/AttributesScreen';
 import SkillsScreen        from './src/screens/SkillsScreen';
@@ -13,6 +14,7 @@ import SkillTreeScreen     from './src/screens/SkillTreeScreen';
 import TitlesScreen        from './src/screens/TitlesScreen';
 import InventoryScreen     from './src/screens/InventoryScreen';
 import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
+import CampaignScreen      from './src/screens/CampaignScreen';
 import CustomizationModal  from './src/components/CustomizationModal';
 import SheetSelectScreen   from './src/screens/SheetSelectScreen';
 import { loadSheetsList }  from './src/utils/sheetsManager';
@@ -22,70 +24,23 @@ const Tab = createBottomTabNavigator();
 const TAB_ICONS = {
   Status:      '❤️',
   Atributos:   '⚔️',
-  Perícias:    '📖',
+  'Perícias':    '📖',
   Equip:       '🛡️',
   Habilidades: '🌟',
-  Títulos:     '👑',
-  Inventário:  '🎒',
+  'Títulos':     '👑',
+  'Inventário':  '🎒',
   Turno:       '⚔️',
+  Campanha:    '🏐',
 };
 
-export default function App() {
-  const [sheetsLoading, setSheetsLoading] = useState(true);
-  const [selectedSheet, setSelectedSheet] = useState(null); // { id, name, createdAt }
-  const [showCustom, setShowCustom]       = useState(false);
-  const [isFirstSetup, setIsFirstSetup]   = useState(false);
+// Inner component that can access AuthContext to wire userIdRef
+function CharacterSheetApp({ selectedSheet, onBack, onCustomize }) {
+  const { user } = useAuth();
 
-  // Carrega lista de fichas na inicialização
-  useEffect(() => {
-    loadSheetsList().then(list => {
-      setSheetsLoading(false);
-      // Se só há uma ficha e foi migrada, seleciona automaticamente
-      // (comportamento anterior mantido)
-    });
-  }, []);
-
-  function handleSelectSheet(sheet) {
-    setIsFirstSetup(false);
-    setSelectedSheet(sheet);
-  }
-
-  function handleNewSheet(sheet) {
-    setIsFirstSetup(true);
-    setSelectedSheet(sheet);
-    setShowCustom(true); // Abre personalização automaticamente para nova ficha
-  }
-
-  function handleCloseCustom() {
-    setShowCustom(false);
-    setIsFirstSetup(false);
-  }
-
-  // Tela de carregamento
-  if (sheetsLoading) {
-    return (
-      <View style={appStyles.loading}>
-        <Text style={appStyles.loadingTitle}>Ficha Digital</Text>
-        <ActivityIndicator color="#89b4fa" style={{ marginTop: 16 }} />
-      </View>
-    );
-  }
-
-  // Tela de seleção de fichas
-  if (!selectedSheet) {
-    return (
-      <>
-        <StatusBar style="light" />
-        <SheetSelectScreen onSelect={handleSelectSheet} onNew={handleNewSheet} />
-      </>
-    );
-  }
-
-  // Tela principal — CharacterProvider usa key para resetar estado ao trocar ficha
   return (
     <CharacterProvider key={selectedSheet.id} sheetId={selectedSheet.id}>
+      <CharacterSyncBridge userId={user?.id} />
       <NavigationContainer>
-        <StatusBar style="light" />
         <Tab.Navigator
           screenOptions={({ route }) => ({
             tabBarIcon: ({ focused }) => (
@@ -105,7 +60,7 @@ export default function App() {
             headerTitleStyle: { fontWeight: 'bold' },
             headerLeft: () => (
               <TouchableOpacity
-                onPress={() => setSelectedSheet(null)}
+                onPress={onBack}
                 style={{ marginLeft: 14, padding: 4 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
@@ -114,7 +69,7 @@ export default function App() {
             ),
             headerRight: () => (
               <TouchableOpacity
-                onPress={() => setShowCustom(true)}
+                onPress={onCustomize}
                 style={{ marginRight: 16, padding: 4 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
@@ -136,15 +91,81 @@ export default function App() {
           <Tab.Screen name="Títulos"     component={TitlesScreen}        options={{ title: 'Títulos' }} />
           <Tab.Screen name="Inventário"  component={InventoryScreen}     options={{ title: 'Inventário' }} />
           <Tab.Screen name="Turno"       component={TurnAssistantScreen} options={{ title: 'Assistente de Turno' }} />
+          <Tab.Screen name="Campanha"    component={CampaignScreen}      options={{ title: 'Campanha' }} />
         </Tab.Navigator>
-
-        <CustomizationModal
-          visible={showCustom}
-          onClose={handleCloseCustom}
-          isFirstSetup={isFirstSetup}
-        />
       </NavigationContainer>
     </CharacterProvider>
+  );
+}
+
+// Bridge component: injects the current userId into CharacterProvider's userIdRef
+// without modifying CharacterProvider's public API.
+function CharacterSyncBridge({ userId }) {
+  const { userIdRef } = require('./src/context/CharacterContext').useCharacter();
+  useEffect(() => {
+    if (userIdRef) userIdRef.current = userId ?? null;
+  }, [userId, userIdRef]);
+  return null;
+}
+
+export default function App() {
+  const [sheetsLoading, setSheetsLoading] = useState(true);
+  const [selectedSheet, setSelectedSheet] = useState(null);
+  const [showCustom, setShowCustom]       = useState(false);
+  const [isFirstSetup, setIsFirstSetup]   = useState(false);
+
+  useEffect(() => {
+    loadSheetsList().then(() => setSheetsLoading(false));
+  }, []);
+
+  function handleSelectSheet(sheet) {
+    setIsFirstSetup(false);
+    setSelectedSheet(sheet);
+  }
+
+  function handleNewSheet(sheet) {
+    setIsFirstSetup(true);
+    setSelectedSheet(sheet);
+    setShowCustom(true);
+  }
+
+  function handleCloseCustom() {
+    setShowCustom(false);
+    setIsFirstSetup(false);
+  }
+
+  if (sheetsLoading) {
+    return (
+      <View style={appStyles.loading}>
+        <Text style={appStyles.loadingTitle}>Ficha Digital</Text>
+        <ActivityIndicator color="#89b4fa" style={{ marginTop: 16 }} />
+      </View>
+    );
+  }
+
+  if (!selectedSheet) {
+    return (
+      <AuthProvider>
+        <StatusBar style="light" />
+        <SheetSelectScreen onSelect={handleSelectSheet} onNew={handleNewSheet} />
+      </AuthProvider>
+    );
+  }
+
+  return (
+    <AuthProvider>
+      <StatusBar style="light" />
+      <CharacterSheetApp
+        selectedSheet={selectedSheet}
+        onBack={() => setSelectedSheet(null)}
+        onCustomize={() => setShowCustom(true)}
+      />
+      <CustomizationModal
+        visible={showCustom}
+        onClose={handleCloseCustom}
+        isFirstSetup={isFirstSetup}
+      />
+    </AuthProvider>
   );
 }
 
