@@ -27,6 +27,19 @@ function clamp(value, min = 0, max = Infinity) {
   return Math.max(min, Math.min(max, value));
 }
 
+// Impacto de cada subatributo nos tetos de status
+const ATTR_STATUS_IMPACT = {
+  forca:        { vida: 1, forcaDeVontade: 1 },
+  destreza:     { vida: 1 },
+  vigor:        { vida: 1, energia: 1 },
+  manha:        {},
+  carisma:      { forcaDeVontade: 1 },
+  etiqueta:     { mana: 1 },
+  percepcao:    { energia: 1 },
+  raciocinio:   {},
+  inteligencia: { mana: 1 },
+};
+
 // Computa bônus numéricos de status dos efeitos narrativos
 function computeNarrativeBonuses(narrativeEffects = []) {
   const result = {};
@@ -34,6 +47,11 @@ function computeNarrativeBonuses(narrativeEffects = []) {
     for (const linha of ef.linhas ?? []) {
       if (linha.tipo === 'status' && linha.statusKey && linha.delta) {
         result[linha.statusKey] = (result[linha.statusKey] || 0) + linha.delta;
+      } else if (linha.tipo === 'atributo' && linha.subAttr && linha.delta) {
+        const impacts = ATTR_STATUS_IMPACT[linha.subAttr] ?? {};
+        for (const [statusKey, mult] of Object.entries(impacts)) {
+          result[statusKey] = (result[statusKey] || 0) + linha.delta * mult;
+        }
       }
     }
   }
@@ -522,6 +540,21 @@ function reducer(state, action) {
         totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], state.attributes)
       );
       return { ...state, narrativeEffects: newEffects, status: newStatus };
+    }
+
+    // { efeitos: [{ tipo:'status', statusKey, delta }] }
+    case 'USE_POTION_RECOVERY': {
+      let newStatus = { ...state.status };
+      for (const ef of action.efeitos ?? []) {
+        if (ef.tipo === 'status' && ef.delta > 0) {
+          const s = newStatus[ef.statusKey];
+          if (s) {
+            const max = s.max ?? Infinity;
+            newStatus = { ...newStatus, [ef.statusKey]: { ...s, current: Math.min(s.current + ef.delta, max) } };
+          }
+        }
+      }
+      return { ...state, status: newStatus };
     }
 
     // { key: 'vida'|'energia'|..., direction: 'up'|'down' }
