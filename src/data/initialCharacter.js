@@ -73,11 +73,11 @@ export const INITIAL_CHARACTER = {
   },
 
   equipment: {
-    peiteira:    basicArmorSlot('Peiteira Básica'),
-    ombreira:    basicArmorSlot('Ombreira Básica'),
-    luvas:       basicArmorSlot('Luvas Básicas'),
-    calcas:      basicArmorSlot('Calças Básicas'),
-    botas:       basicArmorSlot('Botas Básicas'),
+    peiteira:    basicArmorSlot('Peiteira Simples'),
+    ombreira:    basicArmorSlot('Ombreira Simples'),
+    luvas:       basicArmorSlot('Luvas Simples'),
+    calcas:      basicArmorSlot('Calças Simples'),
+    botas:       basicArmorSlot('Botas Simples'),
     maoDireita:  emptyHandSlot(),
     maoEsquerda: emptyHandSlot(),
   },
