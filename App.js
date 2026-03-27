@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, TouchableOpacity, View, ActivityIndicator, StyleSheet } from 'react-native';
@@ -64,25 +65,28 @@ export default function App() {
   // Tela de carregamento
   if (sheetsLoading) {
     return (
-      <View style={appStyles.loading}>
-        <Text style={appStyles.loadingTitle}>Ficha Digital</Text>
-        <ActivityIndicator color="#89b4fa" style={{ marginTop: 16 }} />
-      </View>
+      <SafeAreaProvider>
+        <View style={appStyles.loading}>
+          <Text style={appStyles.loadingTitle}>Ficha Digital</Text>
+          <ActivityIndicator color="#89b4fa" style={{ marginTop: 16 }} />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
   // Tela de seleção de fichas
   if (!selectedSheet) {
     return (
-      <>
+      <SafeAreaProvider>
         <StatusBar style="light" />
         <SheetSelectScreen onSelect={handleSelectSheet} onNew={handleNewSheet} />
-      </>
+      </SafeAreaProvider>
     );
   }
 
   // Tela principal — CharacterProvider usa key para resetar estado ao trocar ficha
   return (
+    <SafeAreaProvider>
     <CharacterProvider key={selectedSheet.id} sheetId={selectedSheet.id}>
       <NavigationContainer>
         <StatusBar style="light" />
@@ -145,6 +149,7 @@ export default function App() {
         />
       </NavigationContainer>
     </CharacterProvider>
+    </SafeAreaProvider>
   );
 }
 

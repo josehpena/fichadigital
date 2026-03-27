@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Modal, Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import {
   CATEGORIAS_RAW, TITLE_BY_ID, TITLE_PREREQS, TITLE_UNLOCKS,
@@ -58,6 +59,7 @@ function hasEnoughBindable(req, acquiredTrails, bindings) {
 // ── Skill Binding Modal ───────────────────────────────────────────────────────
 
 function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, onConfirm, onCancel }) {
+  const insets = useSafeAreaInsets();
   const req = title?.requisitoHabilidades;
   const [selected, setSelected] = useState([]);   // [{trailId,skillId,nome}]
   const [lockedCat, setLockedCat] = useState(null);
@@ -99,7 +101,7 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <Pressable style={mStyles.overlay} onPress={handleClose}>
-        <Pressable style={mStyles.sheet} onPress={() => {}}>
+        <Pressable style={[mStyles.sheet, insets.bottom > 0 && { paddingBottom: 32 + insets.bottom }]} onPress={() => {}}>
           <View style={mStyles.handle} />
           <Text style={[mStyles.title, { color }]}>{title.nome}</Text>
           <Text style={mStyles.subtitle}>

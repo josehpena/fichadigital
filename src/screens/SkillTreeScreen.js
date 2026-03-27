@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Modal, Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import { TRAILS_PROFISSOES, TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
 
@@ -127,6 +128,7 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
 // ── Skill Detail Modal ───────────────────────────────────────────────────────
 
 function SkillDetailModal({ detail, onClose }) {
+  const insets = useSafeAreaInsets();
   if (!detail) return null;
   const { skill, curLevel, trailCost } = detail;
 
@@ -160,7 +162,7 @@ function SkillDetailModal({ detail, onClose }) {
   return (
     <Modal transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalSheet} onPress={() => {}}>
+        <Pressable style={[styles.modalSheet, insets.bottom > 0 && { paddingBottom: 32 + insets.bottom }]} onPress={() => {}}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>{skill.nome}</Text>
           {skill.descricao ? (

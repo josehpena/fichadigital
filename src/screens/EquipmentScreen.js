@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
   Modal, FlatList,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import {
   ARMOR_SLOTS, HAND_SLOTS, EQUIP_LABELS, computeDefenseTotals,
@@ -53,6 +54,7 @@ function tiraLabel(t) {
 // accIndex: índice do acessório (se for acessório)
 function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
   const { dispatch } = useCharacter();
+  const insets = useSafeAreaInsets();
   const [tab, setTab]         = useState('atributo'); // atributo | pericia | narrativa
   const [selKey, setSelKey]   = useState('');
   const [valor, setValor]     = useState('1');
@@ -92,7 +94,7 @@ function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={ms.overlay}>
-        <View style={ms.sheet}>
+        <View style={[ms.sheet, { paddingBottom: 20 + insets.bottom }]}>
           <View style={ms.sheetHeader}>
             <Text style={ms.sheetTitle}>🪢 Tiras de Couro</Text>
             <TouchableOpacity onPress={onClose}><Text style={ms.closeBtn}>✕</Text></TouchableOpacity>
@@ -179,6 +181,7 @@ function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
 // ─── Modal de Arma (mão) ──────────────────────────────────────────────────────
 function WeaponModal({ visible, slotKey, onClose }) {
   const { character, dispatch } = useCharacter();
+  const insets = useSafeAreaInsets();
   const equip = character.equipment[slotKey];
   const [showTiras, setShowTiras] = useState(false);
 
@@ -225,7 +228,7 @@ function WeaponModal({ visible, slotKey, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={ms.overlay}>
-        <ScrollView style={ms.sheet} contentContainerStyle={{ paddingBottom: 24 }}>
+        <ScrollView style={ms.sheet} contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}>
           <View style={ms.sheetHeader}>
             <Text style={ms.sheetTitle}>{EQUIP_LABELS[slotKey]}</Text>
             {broken && <View style={ms.brokenBadge}><Text style={ms.brokenText}>QUEBRADA</Text></View>}
@@ -349,6 +352,7 @@ function WeaponModal({ visible, slotKey, onClose }) {
 // ─── Modal de Armadura ────────────────────────────────────────────────────────
 function ArmorModal({ visible, slotKey, onClose }) {
   const { character, dispatch } = useCharacter();
+  const insets = useSafeAreaInsets();
   const equip = character.equipment[slotKey];
   const broken = equip.durabilidade === 0;
   const [showTiras, setShowTiras] = useState(false);
@@ -374,7 +378,7 @@ function ArmorModal({ visible, slotKey, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={ms.overlay}>
-        <View style={ms.sheet}>
+        <View style={[ms.sheet, { paddingBottom: 20 + insets.bottom }]}>
           <View style={ms.sheetHeader}>
             <Text style={ms.sheetTitle}>{EQUIP_LABELS[slotKey]}</Text>
             {broken && <View style={ms.brokenBadge}><Text style={ms.brokenText}>QUEBRADO</Text></View>}

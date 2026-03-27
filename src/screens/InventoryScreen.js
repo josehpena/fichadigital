@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, StyleSheet, Switch, Alert, Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import { ARMOR_SLOTS, EQUIP_LABELS, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TRAILS_ARMAS } from '../data/trailsData';
@@ -69,6 +70,7 @@ function NumStepper({ label, value, onChange, min = 0 }) {
 // ── Item Modal (criação + edição) ──────────────────────────────────────────────
 function ItemModal({ visible, item, index, section, storageId, onClose }) {
   const { character, dispatch } = useCharacter();
+  const insets = useSafeAreaInsets();
   const isNew = !item.nome;
 
   // Passo: 'type' (só na criação) | 'form'
@@ -336,7 +338,7 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.itemModalOverlay}>
-        <View style={styles.itemModalSheet}>
+        <View style={[styles.itemModalSheet, insets.bottom > 0 && { paddingBottom: 36 + insets.bottom }]}>
 
           {/* Cabeçalho */}
           <View style={styles.itemModalHeader}>
