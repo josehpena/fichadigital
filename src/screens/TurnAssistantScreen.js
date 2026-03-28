@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
-import { HAND_SLOTS, EQUIP_LABELS, computeDefenseTotals } from '../data/initialCharacter';
+import { HAND_SLOTS, EQUIP_LABELS, computeDefenseTotals, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
 import { TITLE_BY_ID } from '../data/titlesData';
 
@@ -486,6 +486,36 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
       const lbl = (twoHand && bonus.tripleInTwoHand) ? `${bonus.label}×3 (${bonus.val}×3)` : bonus.label;
       formula.partes.push({ label: lbl, val: effectiveVal });
       formula.total += effectiveVal;
+    }
+  }
+
+  // Adiciona tiras de couro da arma equipada à fórmula
+  if (formula && weapon) {
+    for (const t of (weapon.tiras ?? [])) {
+      if (t.tipo === 'atributo' && t.valor) {
+        const mult = (twoHand && (t.subAttr === 'forca')) ? 2 : 1;
+        const val = t.valor * mult;
+        const lbl = mult > 1
+          ? `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr}×2 (tira)`
+          : `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr} (tira)`;
+        formula.partes.push({ label: lbl, val });
+        formula.total += val;
+      } else if (t.tipo === 'pericia' && t.valor) {
+        formula.partes.push({ label: `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`, val: t.valor });
+        formula.total += t.valor;
+      }
+    }
+    // Tiras de acerto para ranged
+    if (ranged && acertoFormula) {
+      for (const t of (weapon.tiras ?? [])) {
+        if (t.tipo === 'atributo' && t.valor && t.subAttr === 'destreza') {
+          acertoFormula.partes.push({ label: `${ATTRIBUTE_LABELS[t.subAttr]} (tira)`, val: t.valor });
+          acertoFormula.total += t.valor;
+        } else if (t.tipo === 'pericia' && t.valor && t.skill === 'armasRange') {
+          acertoFormula.partes.push({ label: `${SKILL_LABELS[t.skill]} (tira)`, val: t.valor });
+          acertoFormula.total += t.valor;
+        }
+      }
     }
   }
 
