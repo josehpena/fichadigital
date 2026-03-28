@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import {
   ARMOR_SLOTS, HAND_SLOTS, EQUIP_LABELS, computeDefenseTotals,
-  ATTRIBUTE_LABELS, SKILL_LABELS,
+  ATTRIBUTE_LABELS, SKILL_LABELS, STATUS_LABELS,
 } from '../data/initialCharacter';
 import { TRAILS_ARMAS } from '../data/trailsData';
 
@@ -43,9 +43,12 @@ const ATTR_SUB_KEYS = ['forca', 'destreza', 'vigor', 'manha', 'carisma', 'etique
 const SKILL_KEYS    = Object.keys(SKILL_LABELS);
 
 // ─── Tira Label ───────────────────────────────────────────────────────────────
+const STATUS_TIRA_KEYS = ['mana', 'vida', 'energia', 'forcaDeVontade'];
+
 function tiraLabel(t) {
   if (t.tipo === 'atributo') return `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr} +${t.valor}`;
   if (t.tipo === 'pericia')  return `${SKILL_LABELS[t.skill] ?? t.skill} +${t.valor}`;
+  if (t.tipo === 'status')   return `${STATUS_LABELS[t.statusKey] ?? t.statusKey} +${t.valor}`;
   return t.texto || '—';
 }
 
@@ -55,7 +58,7 @@ function tiraLabel(t) {
 function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
   const { dispatch } = useCharacter();
   const insets = useSafeAreaInsets();
-  const [tab, setTab]         = useState('atributo'); // atributo | pericia | narrativa
+  const [tab, setTab]         = useState('atributo'); // atributo | pericia | status | narrativa
   const [selKey, setSelKey]   = useState('');
   const [valor, setValor]     = useState('1');
   const [texto, setTexto]     = useState('');
@@ -68,6 +71,8 @@ function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
       tira = { tipo: 'atributo', subAttr: selKey, valor: parseInt(valor) || 1 };
     } else if (tab === 'pericia' && selKey) {
       tira = { tipo: 'pericia', skill: selKey, valor: parseInt(valor) || 1 };
+    } else if (tab === 'status' && selKey) {
+      tira = { tipo: 'status', statusKey: selKey, valor: parseInt(valor) || 1 };
     } else if (tab === 'narrativa' && texto.trim()) {
       tira = { tipo: 'narrativa', texto: texto.trim() };
     }
@@ -88,8 +93,8 @@ function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
     }
   }
 
-  const keys = tab === 'atributo' ? ATTR_SUB_KEYS : SKILL_KEYS;
-  const labels = tab === 'atributo' ? ATTRIBUTE_LABELS : SKILL_LABELS;
+  const keys   = tab === 'atributo' ? ATTR_SUB_KEYS : tab === 'status' ? STATUS_TIRA_KEYS : SKILL_KEYS;
+  const labels = tab === 'atributo' ? ATTRIBUTE_LABELS : tab === 'status' ? STATUS_LABELS : SKILL_LABELS;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -119,14 +124,17 @@ function TirasModal({ visible, slotKey, accIndex, tiras, onClose }) {
 
           {/* Tabs de tipo */}
           <View style={ms.tabs}>
-            {['atributo', 'pericia', 'narrativa'].map(t => (
+            {[
+              { id: 'atributo', label: 'Atributo' },
+              { id: 'pericia',  label: 'Perícia' },
+              { id: 'status',   label: 'Status' },
+              { id: 'narrativa',label: 'Narrativa' },
+            ].map(t => (
               <TouchableOpacity
-                key={t} style={[ms.tab, tab === t && ms.tabActive]}
-                onPress={() => { setTab(t); setSelKey(''); }}
+                key={t.id} style={[ms.tab, tab === t.id && ms.tabActive]}
+                onPress={() => { setTab(t.id); setSelKey(''); }}
               >
-                <Text style={[ms.tabText, tab === t && ms.tabTextActive]}>
-                  {t === 'atributo' ? 'Atributo' : t === 'pericia' ? 'Perícia' : 'Narrativa'}
-                </Text>
+                <Text style={[ms.tabText, tab === t.id && ms.tabTextActive]}>{t.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
