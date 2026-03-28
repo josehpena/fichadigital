@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
 import {
   STATUS_COLORS, STATUS_LABELS, COMPUTED_STATUS_KEYS, NO_MAX_STATUS_KEYS,
@@ -11,17 +11,17 @@ const QUICK_DELTAS    = [-5, -1, +1, +5];
 const XP_QUICK_DELTAS = [-100, -10, +10, +25, +50, +100];
 const COUNTER_TIMEOUT = 5000;
 
-// Quais sub-atributos contribuem para cada status calculado
+// Quais sub-atributos contribuem para cada status calculado (com multiplicador opcional)
 const STATUS_FORMULA = {
-  vida:           [['robustez', 'forca'], ['robustez', 'destreza'], ['robustez', 'vigor']],
-  energia:        [['robustez', 'vigor'], ['concentracao', 'percepcao']],
-  mana:           [['concentracao', 'inteligencia'], ['reputacao', 'etiqueta']],
-  forcaDeVontade: [['robustez', 'forca'], ['reputacao', 'carisma']],
+  vida:           [['robustez', 'forca', 1], ['robustez', 'destreza', 1], ['robustez', 'vigor', 1]],
+  energia:        [['robustez', 'vigor', 2], ['concentracao', 'percepcao', 2]],
+  mana:           [['concentracao', 'inteligencia', 1], ['reputacao', 'etiqueta', 1]],
+  forcaDeVontade: [['robustez', 'forca', 1], ['reputacao', 'carisma', 1]],
 };
 
 const STATUS_BASE = { vida: 10 };
 
-// Sub-atributos relevantes por status (para filtrar tiras)
+// Sub-atributos relevantes por status (para filtrar tiras de atributo)
 const STATUS_ATTR_DEPS = {
   vida:           ['forca', 'destreza', 'vigor'],
   energia:        ['vigor', 'percepcao'],
@@ -35,9 +35,13 @@ function getStatusBreakdown(statusKey, character) {
   // ── Fórmula de atributos ─────────────────────────────────────────────────
   const formula = STATUS_FORMULA[statusKey];
   if (formula) {
-    for (const [grupo, sub] of formula) {
-      const val = character.attributes[grupo]?.[sub] ?? 0;
-      parts.push({ label: ATTRIBUTE_LABELS[sub] ?? sub, val, source: 'atributo' });
+    for (const [grupo, sub, mult = 1] of formula) {
+      const raw = character.attributes[grupo]?.[sub] ?? 0;
+      const val = raw * mult;
+      const label = mult > 1
+        ? `${ATTRIBUTE_LABELS[sub] ?? sub} ×${mult}`
+        : (ATTRIBUTE_LABELS[sub] ?? sub);
+      parts.push({ label, val, source: 'atributo' });
     }
     const base = STATUS_BASE[statusKey];
     if (base) parts.push({ label: 'Base', val: base, source: 'base' });
@@ -54,23 +58,25 @@ function getStatusBreakdown(statusKey, character) {
     }
   }
 
-  // ── Tiras de couro (atributo) em itens equipados ──────────────────────────
+  // ── Tiras de couro em itens equipados ─────────────────────────────────────
+  const allSlots = [...ARMOR_SLOTS, ...HAND_SLOTS];
   const deps = STATUS_ATTR_DEPS[statusKey] ?? [];
-  if (deps.length > 0) {
-    const allSlots = [...ARMOR_SLOTS, ...HAND_SLOTS];
-    for (const slotKey of allSlots) {
-      const slot = character.equipment?.[slotKey];
-      if (!slot) continue;
-      const tiras = slot.tiras ?? [];
-      for (const t of tiras) {
-        if (t.tipo === 'atributo' && deps.includes(t.subAttr) && t.valor) {
-          const itemName = slot.nome || slotKey;
-          parts.push({
-            label: `${itemName} (${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr})`,
-            val: t.valor,
-            source: 'tira',
-          });
-        }
+  for (const slotKey of allSlots) {
+    const slot = character.equipment?.[slotKey];
+    if (!slot) continue;
+    for (const t of (slot.tiras ?? [])) {
+      if (t.tipo === 'atributo' && deps.includes(t.subAttr) && t.valor) {
+        parts.push({ label: `${slot.nome || slotKey} (${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr})`, val: t.valor, source: 'tira' });
+      } else if (t.tipo === 'status' && t.statusKey === statusKey && t.valor) {
+        parts.push({ label: slot.nome || slotKey, val: t.valor, source: 'tira' });
+      }
+    }
+  }
+  // Tiras de status em acessórios
+  for (const acc of (character.accessories ?? [])) {
+    for (const t of (acc.tiras ?? [])) {
+      if (t.tipo === 'status' && t.statusKey === statusKey && t.valor) {
+        parts.push({ label: acc.nome || 'Acessório', val: t.valor, source: 'tira' });
       }
     }
   }
@@ -89,6 +95,7 @@ export default function StatusCard({ statusKey }) {
 
   const [deltaAcc, setDeltaAcc] = useState(0);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [quickVal, setQuickVal] = useState('');
   const timerRef = useRef(null);
 
   const change = useCallback((delta) => {
@@ -191,6 +198,33 @@ export default function StatusCard({ statusKey }) {
         )}
       </View>
 
+      {/* Campo de dano/cura rápido */}
+      {statusKey !== 'xp' && (
+        <View style={styles.quickRow}>
+          <TouchableOpacity
+            style={styles.quickDmgBtn}
+            onPress={() => { const v = parseInt(quickVal, 10); if (v > 0) { change(-v); setQuickVal(''); } }}
+          >
+            <Text style={styles.quickDmgText}>− Dano</Text>
+          </TouchableOpacity>
+          <TextInput
+            style={styles.quickInput}
+            value={quickVal}
+            onChangeText={setQuickVal}
+            keyboardType="number-pad"
+            placeholder="0"
+            placeholderTextColor="#45475a"
+            maxLength={5}
+          />
+          <TouchableOpacity
+            style={styles.quickHealBtn}
+            onPress={() => { const v = parseInt(quickVal, 10); if (v > 0) { change(+v); setQuickVal(''); } }}
+          >
+            <Text style={styles.quickHealText}>+ Cura</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={styles.btnRow}>
         {(statusKey === 'xp' ? XP_QUICK_DELTAS : QUICK_DELTAS).map((d) => (
           <TouchableOpacity
@@ -278,6 +312,19 @@ const styles = StyleSheet.create({
     borderRadius: 8, backgroundColor: '#313244',
     overflow: 'hidden',
   },
+
+  quickRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8,
+  },
+  quickInput: {
+    flex: 1, textAlign: 'center', color: '#cdd6f4', fontSize: 16, fontWeight: '700',
+    backgroundColor: '#181825', borderRadius: 8, paddingVertical: 6,
+    borderWidth: 1, borderColor: '#313244',
+  },
+  quickDmgBtn:  { backgroundColor: '#45273a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  quickDmgText: { color: '#f38ba8', fontWeight: '700', fontSize: 12 },
+  quickHealBtn: { backgroundColor: '#1e3a2f', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  quickHealText:{ color: '#a6e3a1', fontWeight: '700', fontSize: 12 },
 
   btnRow:  { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
   btn:     { flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: 'center' },

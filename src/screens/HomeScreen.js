@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TextInput, StyleSheet,
   TouchableOpacity, Alert, Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import StatusCard from '../components/StatusCard';
 import { computeDefenseTotals, COMPUTED_STATUS_KEYS, STATUS_LABELS, ATTRIBUTE_LABELS } from '../data/initialCharacter';
@@ -13,6 +14,7 @@ const STATUS_KEYS_SELECTABLE = COMPUTED_STATUS_KEYS; // vida, energia, mana, for
 
 function NarrativeEffectModal({ visible, onClose }) {
   const { dispatch } = useCharacter();
+  const insets = useSafeAreaInsets();
   const [nome, setNome]       = useState('');
   const [tab, setTab]         = useState('status'); // status | texto
   const [selStatus, setSelStatus] = useState(STATUS_KEYS_SELECTABLE[0]);
@@ -48,7 +50,7 @@ function NarrativeEffectModal({ visible, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={ne.overlay}>
-        <ScrollView style={ne.sheet} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+        <ScrollView style={ne.sheet} contentContainerStyle={{ paddingBottom: 24 + insets.bottom }} keyboardShouldPersistTaps="handled">
           <View style={ne.header}>
             <Text style={ne.title}>✨ Novo Efeito Narrativo</Text>
             <TouchableOpacity onPress={onClose}><Text style={ne.closeBtn}>✕</Text></TouchableOpacity>

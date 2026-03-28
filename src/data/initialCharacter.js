@@ -5,7 +5,7 @@ export function computeMaxValues(attrs) {
   const c   = attrs.concentracao;
   return {
     vida:           r.forca + r.destreza + r.vigor + 10,
-    energia:        r.vigor + c.percepcao,
+    energia:        (r.vigor + c.percepcao) * 2,
     forcaDeVontade: r.forca + rep.carisma,
     mana:           c.inteligencia + rep.etiqueta,
   };

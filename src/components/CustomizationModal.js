@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import { STATUS_LABELS, STATUS_COLORS } from '../data/initialCharacter';
 
@@ -19,6 +20,7 @@ const SKILL_CATS = [
 
 export default function CustomizationModal({ visible, onClose, isFirstSetup = false }) {
   const { character, dispatch } = useCharacter();
+  const insets = useSafeAreaInsets();
   const { statusOrder, xpCosts } = character.settings;
 
   const moveStatus = (key, dir) => dispatch({ type: 'MOVE_STATUS', key, direction: dir });
@@ -104,7 +106,7 @@ export default function CustomizationModal({ visible, onClose, isFirstSetup = fa
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, insets.bottom > 0 && { paddingBottom: 32 + insets.bottom }]}>
           <View style={styles.modalHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.modalTitle}>✏️  Personalização</Text>

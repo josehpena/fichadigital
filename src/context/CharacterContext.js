@@ -6,6 +6,7 @@ import {
   computeMaxValues,
   SKILL_CATEGORIES,
   ARMOR_SLOTS,
+  HAND_SLOTS,
   xpCostForRange,
 } from '../data/initialCharacter';
 import { findTrail, findCategoryTrails } from '../data/trailsData';
@@ -31,14 +32,51 @@ function clamp(value, min = 0, max = Infinity) {
 const ATTR_STATUS_IMPACT = {
   forca:        { vida: 1, forcaDeVontade: 1 },
   destreza:     { vida: 1 },
-  vigor:        { vida: 1, energia: 1 },
+  vigor:        { vida: 1, energia: 2 },
   manha:        {},
   carisma:      { forcaDeVontade: 1 },
   etiqueta:     { mana: 1 },
-  percepcao:    { energia: 1 },
+  percepcao:    { energia: 2 },
   raciocinio:   {},
   inteligencia: { mana: 1 },
 };
+
+// Bônus de status vindos de tiras 'status' em equipamentos e acessórios equipados
+function computeEquipTirasBonuses(equipment = {}, accessories = []) {
+  const result = {};
+  for (const slot of [...ARMOR_SLOTS, ...HAND_SLOTS]) {
+    const item = equipment[slot];
+    if (!item || item.durabilidade === 0) continue;
+    for (const t of (item.tiras ?? [])) {
+      if (t.tipo === 'status' && t.statusKey && t.valor) {
+        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
+      }
+    }
+  }
+  for (const acc of accessories) {
+    for (const t of (acc.tiras ?? [])) {
+      if (t.tipo === 'status' && t.statusKey && t.valor) {
+        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
+      }
+    }
+  }
+  return result;
+}
+
+// Computa todos os bônus de status a partir de um objeto character/state
+function computeAllStatusBonuses(char) {
+  const equipTiras = computeEquipTirasBonuses(char.equipment ?? {}, char.accessories ?? []);
+  const merged = { ...(char.titles?.statusBonuses ?? {}) };
+  for (const [k, v] of Object.entries(equipTiras)) merged[k] = (merged[k] || 0) + v;
+  return totalStatusBonuses(
+    merged,
+    char.narrativeEffects ?? [],
+    char.titles?.skillBonuses ?? [],
+    char.skills ?? {},
+    char.titles?.attrBonuses ?? [],
+    char.attributes ?? {},
+  );
+}
 
 // Computa bônus numéricos de status dos efeitos narrativos
 function computeNarrativeBonuses(narrativeEffects = []) {
@@ -109,10 +147,7 @@ function reducer(state, action) {
     case 'LOAD': {
       const p = action.payload;
       if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
-      const status = applyComputedMaxes(
-        p.status, p.attributes,
-        totalStatusBonuses(p.titles?.statusBonuses ?? {}, p.narrativeEffects ?? [], p.titles?.skillBonuses ?? [], p.skills ?? {}, p.titles?.attrBonuses ?? [], p.attributes ?? {})
-      );
+      const status = applyComputedMaxes(p.status, p.attributes, computeAllStatusBonuses(p));
       // Mescla settings: preserva customizações salvas, garante campos novos
       const savedSettings = p.settings ?? {};
       const settings = {
@@ -193,7 +228,7 @@ function reducer(state, action) {
       };
       const newStatus = applyComputedMaxes(
         state.status, newAttrs,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], newAttrs)
+        computeAllStatusBonuses({ ...state, attributes: newAttrs })
       );
 
       if (newVal > curVal) {
@@ -217,7 +252,7 @@ function reducer(state, action) {
       const affectsMax = skillBonuses.some(b => b.skill === action.skill);
       const newStatus = affectsMax
         ? applyComputedMaxes(state.status, state.attributes,
-            totalStatusBonuses(state.titles?.statusBonuses ?? {}, state.narrativeEffects ?? [], skillBonuses, newSkills, state.titles?.attrBonuses ?? [], state.attributes))
+            computeAllStatusBonuses({ ...state, skills: newSkills }))
         : state.status;
 
       if (newVal > curVal) {
@@ -250,23 +285,18 @@ function reducer(state, action) {
     // { slot, tira }  — adiciona tira de couro ao slot
     case 'ADD_EQUIP_TIRA': {
       const slot = state.equipment[action.slot];
-      return {
-        ...state,
-        equipment: {
-          ...state.equipment,
-          [action.slot]: { ...slot, tiras: [...(slot.tiras ?? []), action.tira] },
-        },
-      };
+      const newEquip = { ...state.equipment, [action.slot]: { ...slot, tiras: [...(slot.tiras ?? []), action.tira] } };
+      const newState = { ...state, equipment: newEquip };
+      return { ...newState, status: applyComputedMaxes(state.status, state.attributes, computeAllStatusBonuses(newState)) };
     }
 
     // { slot, index }  — remove tira de couro do slot
     case 'REMOVE_EQUIP_TIRA': {
       const slot = state.equipment[action.slot];
       const tiras = (slot.tiras ?? []).filter((_, i) => i !== action.index);
-      return {
-        ...state,
-        equipment: { ...state.equipment, [action.slot]: { ...slot, tiras } },
-      };
+      const newEquip = { ...state.equipment, [action.slot]: { ...slot, tiras } };
+      const newState = { ...state, equipment: newEquip };
+      return { ...newState, status: applyComputedMaxes(state.status, state.attributes, computeAllStatusBonuses(newState)) };
     }
 
     // { slot, delta }  — altera durabilidade atual
@@ -500,17 +530,17 @@ function reducer(state, action) {
     // { index, tira }  — adiciona tira a um acessório
     case 'ADD_ACC_TIRA': {
       const accessories = [...state.accessories];
-      const acc = accessories[action.index];
-      accessories[action.index] = { ...acc, tiras: [...(acc.tiras ?? []), action.tira] };
-      return { ...state, accessories };
+      accessories[action.index] = { ...accessories[action.index], tiras: [...(accessories[action.index].tiras ?? []), action.tira] };
+      const newState = { ...state, accessories };
+      return { ...newState, status: applyComputedMaxes(state.status, state.attributes, computeAllStatusBonuses(newState)) };
     }
 
     // { index, tiraIndex }  — remove tira de um acessório
     case 'REMOVE_ACC_TIRA': {
       const accessories = [...state.accessories];
-      const acc = accessories[action.index];
-      accessories[action.index] = { ...acc, tiras: (acc.tiras ?? []).filter((_, i) => i !== action.tiraIndex) };
-      return { ...state, accessories };
+      accessories[action.index] = { ...accessories[action.index], tiras: (accessories[action.index].tiras ?? []).filter((_, i) => i !== action.tiraIndex) };
+      const newState = { ...state, accessories };
+      return { ...newState, status: applyComputedMaxes(state.status, state.attributes, computeAllStatusBonuses(newState)) };
     }
 
     // ── Efeitos Narrativos ───────────────────────────────────────────────────
@@ -520,7 +550,7 @@ function reducer(state, action) {
       const newEffects = [...(state.narrativeEffects ?? []), action.effect];
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], state.attributes)
+        computeAllStatusBonuses({ ...state, narrativeEffects: newEffects })
       );
       // Aumenta current para bônus positivos de status
       for (const linha of action.effect.linhas ?? []) {
@@ -537,7 +567,7 @@ function reducer(state, action) {
       const newEffects = (state.narrativeEffects ?? []).filter((_, i) => i !== action.index);
       const newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(state.titles?.statusBonuses ?? {}, newEffects, state.titles?.skillBonuses ?? [], state.skills ?? {}, state.titles?.attrBonuses ?? [], state.attributes)
+        computeAllStatusBonuses({ ...state, narrativeEffects: newEffects })
       );
       return { ...state, narrativeEffects: newEffects, status: newStatus };
     }
@@ -709,7 +739,7 @@ function reducer(state, action) {
 
       let newStatus = applyComputedMaxes(
         state.status, state.attributes,
-        totalStatusBonuses(newBonuses, state.narrativeEffects ?? [], newSkillBonuses, state.skills ?? {}, newAttrBonuses, state.attributes)
+        computeAllStatusBonuses({ ...state, titles: { ...state.titles, statusBonuses: newBonuses, skillBonuses: newSkillBonuses, attrBonuses: newAttrBonuses } })
       );
       // Aumenta o current proporcional ao bônus positivo (estático)
       for (const ef of title.efeitos ?? []) {
