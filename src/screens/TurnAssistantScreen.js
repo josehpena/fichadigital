@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
-import { HAND_SLOTS, EQUIP_LABELS, computeDefenseTotals, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
+import { HAND_SLOTS, ARMOR_SLOTS, EQUIP_LABELS, computeDefenseTotals, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
 import { TITLE_BY_ID } from '../data/titlesData';
 
@@ -489,25 +489,48 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
     }
   }
 
-  // Adiciona tiras de couro da arma equipada à fórmula
-  if (formula && weapon) {
-    for (const t of (weapon.tiras ?? [])) {
+  // Coleta tiras de couro de todos os equipamentos (arma + armaduras + acessórios)
+  if (formula) {
+    const allTiras = [];
+    if (weapon) {
+      for (const t of (weapon.tiras ?? [])) allTiras.push(t);
+    }
+    for (const slotKey of ARMOR_SLOTS) {
+      const slot = character.equipment?.[slotKey];
+      if (slot && slot.durabilidade > 0) {
+        for (const t of (slot.tiras ?? [])) allTiras.push(t);
+      }
+    }
+    for (const acc of (character.accessories ?? [])) {
+      for (const t of (acc.tiras ?? [])) allTiras.push(t);
+    }
+
+    for (const t of allTiras) {
       if (t.tipo === 'atributo' && t.valor) {
-        const mult = (twoHand && (t.subAttr === 'forca')) ? 2 : 1;
+        const mult = (twoHand && t.subAttr === 'forca') ? 2 : 1;
         const val = t.valor * mult;
         const lbl = mult > 1
           ? `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr}×2 (tira)`
           : `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr} (tira)`;
         formula.partes.push({ label: lbl, val });
         formula.total += val;
-      } else if (t.tipo === 'pericia' && t.valor) {
+      } else if (t.tipo === 'pericia' && t.skill === 'armasBrancas' && t.valor) {
+        const mult = twoHand ? 3 : 1;
+        const val = t.valor * mult;
+        const lbl = mult > 1
+          ? `${SKILL_LABELS[t.skill] ?? t.skill}×3 (tira)`
+          : `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`;
+        formula.partes.push({ label: lbl, val });
+        formula.total += val;
+      } else if (t.tipo === 'pericia' && t.skill !== 'armasBrancas' && t.valor) {
         formula.partes.push({ label: `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`, val: t.valor });
         formula.total += t.valor;
       }
     }
+
     // Tiras de acerto para ranged
     if (ranged && acertoFormula) {
-      for (const t of (weapon.tiras ?? [])) {
+      for (const t of allTiras) {
         if (t.tipo === 'atributo' && t.valor && t.subAttr === 'destreza') {
           acertoFormula.partes.push({ label: `${ATTRIBUTE_LABELS[t.subAttr]} (tira)`, val: t.valor });
           acertoFormula.total += t.valor;
