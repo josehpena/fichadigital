@@ -651,9 +651,14 @@ function reducer(state, action) {
           const existing = catTrails.find(ct => state.skillTree.acquiredTrails[ct.id]);
           if (existing) nextCost = state.skillTree.acquiredTrails[existing.id].cost;
         }
+        // Respeita custo personalizado definido antes da aquisição
+        if (!trail.categoria || !nextCost) {
+          nextCost = state.skillTree.customCosts?.[action.trailId] ?? nextCost;
+        }
 
         trailData = { cost: nextCost, skills: {} };
         newSkillTree = {
+          ...state.skillTree,
           trailCount: state.skillTree.trailCount + 1,
           acquiredTrails: {
             ...state.skillTree.acquiredTrails,
@@ -662,12 +667,13 @@ function reducer(state, action) {
         };
 
         // Adquire todas as outras trilhas da mesma categoria no mesmo custo
+        // (não incrementa trailCount por categoria — a "slot" já foi contada acima)
         if (trail.categoria) {
           const catTrails = findCategoryTrails(trail.categoria);
           for (const catTrail of catTrails) {
             if (catTrail.id !== action.trailId && !newSkillTree.acquiredTrails[catTrail.id]) {
               newSkillTree = {
-                trailCount: newSkillTree.trailCount + 1,
+                ...newSkillTree,
                 acquiredTrails: {
                   ...newSkillTree.acquiredTrails,
                   [catTrail.id]: { cost: nextCost, skills: {} },
@@ -717,6 +723,32 @@ function reducer(state, action) {
             ...state.skillTree.acquiredTrails,
             [action.trailId]: { ...trailData, skills: newSkills },
           },
+        },
+      };
+    }
+
+    // { trailId, cost } — edita o custo XP/nível de uma trilha
+    case 'SET_TRAIL_COST': {
+      const cost = Math.max(1, parseInt(action.cost) || 1);
+      const existing = state.skillTree.acquiredTrails[action.trailId];
+      if (existing) {
+        return {
+          ...state,
+          skillTree: {
+            ...state.skillTree,
+            acquiredTrails: {
+              ...state.skillTree.acquiredTrails,
+              [action.trailId]: { ...existing, cost },
+            },
+          },
+        };
+      }
+      // Trilha ainda não adquirida — salva em customCosts
+      return {
+        ...state,
+        skillTree: {
+          ...state.skillTree,
+          customCosts: { ...(state.skillTree.customCosts ?? {}), [action.trailId]: cost },
         },
       };
     }

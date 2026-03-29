@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Modal, Pressable,
+  StyleSheet, Modal, Pressable, TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
@@ -69,23 +69,73 @@ function xpCostForRange(fromLevel, toLevel, costPerLevel) {
   return total;
 }
 
+// ── Trail Cost Edit Modal ────────────────────────────────────────────────────
+
+function TrailCostModal({ trail, currentCost, onClose }) {
+  const { dispatch } = useCharacter();
+  const insets = useSafeAreaInsets();
+  const [val, setVal] = useState(String(currentCost));
+
+  const save = () => {
+    const n = parseInt(val, 10);
+    if (n > 0) dispatch({ type: 'SET_TRAIL_COST', trailId: trail.id, cost: n });
+    onClose();
+  };
+
+  return (
+    <Modal transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable
+          style={[styles.modalSheet, { paddingBottom: 24 + (insets.bottom > 0 ? insets.bottom : 0) }]}
+          onPress={() => {}}
+        >
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>{trail.nome}</Text>
+          <Text style={styles.costEditLabel}>Custo XP por nível de habilidade</Text>
+          <TextInput
+            style={styles.costEditInput}
+            value={val}
+            onChangeText={setVal}
+            keyboardType="number-pad"
+            maxLength={5}
+            autoFocus
+          />
+          <TouchableOpacity style={styles.costEditSaveBtn} onPress={save}>
+            <Text style={styles.costEditSaveBtnText}>Salvar</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 // ── Trail Card ───────────────────────────────────────────────────────────────
 
 function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
   const { character } = useCharacter();
   const [expanded, setExpanded] = useState(false);
-  const trailData   = character.skillTree.acquiredTrails[trail.id];
-  const acquired    = !!trailData;
-  const trailCost   = trailData?.cost ?? nextTrailCost;
-  const totalLevels = trailData
+  const [editingCost, setEditingCost] = useState(false);
+  const trailData    = character.skillTree.acquiredTrails[trail.id];
+  const acquired     = !!trailData;
+  const customCost   = character.skillTree.customCosts?.[trail.id];
+  const trailCost    = trailData?.cost ?? customCost ?? nextTrailCost;
+  const totalLevels  = trailData
     ? Object.values(trailData.skills).reduce((s, v) => s + v, 0)
     : 0;
 
   return (
     <View style={[styles.trailCard, acquired && { borderLeftColor: color }]}>
+      {editingCost && (
+        <TrailCostModal
+          trail={trail}
+          currentCost={trailCost}
+          onClose={() => setEditingCost(false)}
+        />
+      )}
       <TouchableOpacity
         style={styles.trailHeader}
         onPress={() => setExpanded(v => !v)}
+        onLongPress={() => setEditingCost(true)}
         activeOpacity={0.7}
       >
         <View style={[styles.trailDot, { backgroundColor: acquired ? color : '#45475a' }]} />
@@ -128,9 +178,15 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
 // ── Skill Detail Modal ───────────────────────────────────────────────────────
 
 function SkillDetailModal({ detail, onClose }) {
+  const { dispatch } = useCharacter();
   const insets = useSafeAreaInsets();
   if (!detail) return null;
-  const { skill, curLevel, trailCost } = detail;
+  const { skill, curLevel, trailCost, trailId } = detail;
+
+  const handleUnlearn = () => {
+    dispatch({ type: 'UNLEARN_SKILL', trailId, skillId: skill.id });
+    onClose();
+  };
 
   const renderNivelContent = (nivelData) => {
     if (Array.isArray(nivelData)) {
@@ -189,6 +245,11 @@ function SkillDetailModal({ detail, onClose }) {
               </View>
             ))}
           </ScrollView>
+          {curLevel > 0 && (
+            <TouchableOpacity style={styles.unlearnBtn} onPress={handleUnlearn}>
+              <Text style={styles.unlearnBtnText}>Desaprender nível {curLevel}</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.modalClose} onPress={onClose}>
             <Text style={styles.modalCloseText}>Fechar</Text>
           </TouchableOpacity>
@@ -250,7 +311,7 @@ export default function SkillTreeScreen() {
       {/* Trail list */}
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         <Text style={styles.hint}>
-          Toque para expandir · Compre uma habilidade para desbloquear a trilha · Segure para detalhes
+          Toque para expandir · Compre uma habilidade para desbloquear a trilha · Segure a trilha para editar custo · Segure habilidade para detalhes
         </Text>
         {tab.trails.map(trail => (
           <TrailCard
@@ -366,4 +427,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center',
   },
   modalCloseText: { color: '#cdd6f4', fontWeight: '600' },
+
+  // Unlearn
+  unlearnBtn: {
+    marginTop: 8, backgroundColor: '#2d1b1b', borderRadius: 10, borderWidth: 1,
+    borderColor: '#f38ba8', paddingVertical: 11, alignItems: 'center',
+  },
+  unlearnBtnText: { color: '#f38ba8', fontWeight: '700', fontSize: 13 },
+
+  // Trail cost edit
+  costEditLabel: { color: '#6c7086', fontSize: 12, marginBottom: 8, marginTop: 4 },
+  costEditInput: {
+    backgroundColor: '#181825', borderRadius: 10, borderWidth: 1,
+    borderColor: '#313244', color: '#cdd6f4', fontSize: 22, fontWeight: 'bold',
+    textAlign: 'center', paddingVertical: 10, marginBottom: 12,
+  },
+  costEditSaveBtn: {
+    backgroundColor: '#1d3052', borderRadius: 10, borderWidth: 1,
+    borderColor: '#89b4fa', paddingVertical: 12, alignItems: 'center',
+  },
+  costEditSaveBtnText: { color: '#89b4fa', fontWeight: '700', fontSize: 14 },
 });
