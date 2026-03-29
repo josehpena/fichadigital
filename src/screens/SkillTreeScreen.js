@@ -178,9 +178,15 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
 // ── Skill Detail Modal ───────────────────────────────────────────────────────
 
 function SkillDetailModal({ detail, onClose }) {
+  const { dispatch } = useCharacter();
   const insets = useSafeAreaInsets();
   if (!detail) return null;
-  const { skill, curLevel, trailCost } = detail;
+  const { skill, curLevel, trailCost, trailId } = detail;
+
+  const handleUnlearn = () => {
+    dispatch({ type: 'UNLEARN_SKILL', trailId, skillId: skill.id });
+    onClose();
+  };
 
   const renderNivelContent = (nivelData) => {
     if (Array.isArray(nivelData)) {
@@ -239,6 +245,11 @@ function SkillDetailModal({ detail, onClose }) {
               </View>
             ))}
           </ScrollView>
+          {curLevel > 0 && (
+            <TouchableOpacity style={styles.unlearnBtn} onPress={handleUnlearn}>
+              <Text style={styles.unlearnBtnText}>Desaprender nível {curLevel}</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.modalClose} onPress={onClose}>
             <Text style={styles.modalCloseText}>Fechar</Text>
           </TouchableOpacity>
@@ -416,6 +427,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center',
   },
   modalCloseText: { color: '#cdd6f4', fontWeight: '600' },
+
+  // Unlearn
+  unlearnBtn: {
+    marginTop: 8, backgroundColor: '#2d1b1b', borderRadius: 10, borderWidth: 1,
+    borderColor: '#f38ba8', paddingVertical: 11, alignItems: 'center',
+  },
+  unlearnBtnText: { color: '#f38ba8', fontWeight: '700', fontSize: 13 },
 
   // Trail cost edit
   costEditLabel: { color: '#6c7086', fontSize: 12, marginBottom: 8, marginTop: 4 },
