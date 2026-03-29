@@ -91,6 +91,8 @@ export const INITIAL_CHARACTER = {
     trailCount: 0,
     acquiredTrails: {},
     // acquiredTrails format: { trailId: { cost: number, skills: { skillId: level } } }
+    customCosts: {},
+    // customCosts format: { trailId: number } — custo XP/nível personalizado antes de adquirir
   },
 
   titles: {
