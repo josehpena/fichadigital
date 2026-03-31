@@ -812,10 +812,49 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   // Todas as armas com habilidades relevantes para bloqueio
   const blockWeapons = getAllBlockSkills(character.equipment, character.skillTree?.acquiredTrails);
 
-  // Bônus numéricos incondicionais ao bloqueio
-  const blockBonuses  = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
+  // Coleta tiras de couro de todos os equipamentos (arma + armaduras + acessórios)
+  const allTiras = [];
+  for (const slotKey of HAND_SLOTS) {
+    const slot = character.equipment?.[slotKey];
+    if (slot) for (const t of (slot.tiras ?? [])) allTiras.push(t);
+  }
+  for (const slotKey of ARMOR_SLOTS) {
+    const slot = character.equipment?.[slotKey];
+    if (slot && slot.durabilidade > 0) for (const t of (slot.tiras ?? [])) allTiras.push(t);
+  }
+  for (const acc of (character.accessories ?? [])) {
+    for (const t of (acc.tiras ?? [])) allTiras.push(t);
+  }
+
+  // Bônus numéricos incondicionais ao bloqueio (base das skills)
+  const blockBonuses    = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
   const blockBonusTotal = blockBonuses.reduce((a, b) => a + b.val, 0);
-  const blockTotal    = totalArmadura + blockBonusTotal;
+
+  // Tiras de equipamento aplicadas ao bloqueio (para cada skill ativa)
+  const blockTiraBonuses = [];
+  const fatiadorLv = blockLevels.fatiador ?? 0;
+  if (fatiadorLv >= 1) {
+    const tiraBrancas = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === 'armasBrancas' && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+    if (tiraBrancas > 0) {
+      const mult = fatiadorLv >= 3 ? 2 : 1;
+      blockTiraBonuses.push({
+        label: mult > 1 ? 'Armas Brancas×2 (tira)' : 'Armas Brancas (tira)',
+        val: tiraBrancas * mult,
+      });
+    }
+  }
+  const confrontoLv = blockLevels.confronto ?? 0;
+  if (confrontoLv >= 1) {
+    const tiraVigor = allTiras
+      .filter(t => t.tipo === 'atributo' && t.subAttr === 'vigor' && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+    if (tiraVigor > 0) blockTiraBonuses.push({ label: 'Vigor (tira)', val: tiraVigor });
+  }
+
+  const blockTiraTotal = blockTiraBonuses.reduce((a, b) => a + b.val, 0);
+  const blockTotal     = totalArmadura + blockBonusTotal + blockTiraTotal;
 
   // Efeitos especiais
   const allBlockSkills = blockWeapons.flatMap(w => w.skills);
@@ -866,7 +905,16 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
                 </View>
               </React.Fragment>
             ))}
-            {blockBonuses.length > 0 && (
+            {blockTiraBonuses.map(b => (
+              <React.Fragment key={b.label}>
+                <Text style={s.formulaOp}>+</Text>
+                <View style={s.formulaPart}>
+                  <Text style={s.formulaVal}>{b.val}</Text>
+                  <Text style={s.formulaLbl}>{b.label}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+            {(blockBonuses.length > 0 || blockTiraBonuses.length > 0) && (
               <>
                 <Text style={s.formulaOp}>=</Text>
                 <View style={[s.formulaPart, s.formulaTotal]}>
