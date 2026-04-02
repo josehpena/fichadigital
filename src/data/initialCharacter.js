@@ -116,6 +116,10 @@ export const INITIAL_CHARACTER = {
     storages: [], // armazenamentos customizados: [{ id, nome, icone, capacidade, itens }]
   },
 
+  journal: {
+    entries: [],
+  },
+
   settings: {
     statusOrder: ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'],
     xpCosts: {
