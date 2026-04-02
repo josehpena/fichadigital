@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { queueSync, uploadSheet, isOnline } from '../services/syncService';
 import {
   INITIAL_CHARACTER,
   COMPUTED_STATUS_KEYS,
@@ -916,22 +917,50 @@ function reducer(state, action) {
   }
 }
 
-export function CharacterProvider({ children, sheetId }) {
+export function CharacterProvider({ children, sheetId, userId, sheetName }) {
   const storageKey = sheetId ? `@fichadigital_v2_${sheetId}` : STORAGE_KEY;
   const [character, dispatch] = useReducer(reducer, INITIAL_CHARACTER);
+  const loadedRef = useRef(false);
+  const syncTimerRef = useRef(null);
 
   useEffect(() => {
     AsyncStorage.getItem(storageKey).then((raw) => {
       if (raw) {
         try { dispatch({ type: 'LOAD', payload: JSON.parse(raw) }); } catch (_) {}
       }
+      loadedRef.current = true;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
   useEffect(() => {
+    if (!loadedRef.current) return;
+
+    // Salva localmente (sempre funciona, mesmo offline)
     AsyncStorage.setItem(storageKey, JSON.stringify(character));
-  }, [character, storageKey]);
+
+    // Debounce sync remoto: espera 2s de inatividade antes de enviar
+    if (userId && sheetId) {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(async () => {
+        const online = await isOnline();
+        if (online) {
+          try {
+            await uploadSheet(userId, sheetId, character, { name: sheetName });
+          } catch {
+            // Falhou — coloca na fila para tentar depois
+            await queueSync({ type: 'upsert', sheetId, name: sheetName });
+          }
+        } else {
+          await queueSync({ type: 'upsert', sheetId, name: sheetName });
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [character, storageKey, userId, sheetId, sheetName]);
 
   return (
     <CharacterContext.Provider value={{ character, dispatch }}>
