@@ -16,6 +16,7 @@ import TitlesScreen        from './src/screens/TitlesScreen';
 import InventoryScreen     from './src/screens/InventoryScreen';
 import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
 import CustomizationModal  from './src/components/CustomizationModal';
+import JournalModal        from './src/components/JournalModal';
 import SheetSelectScreen   from './src/screens/SheetSelectScreen';
 import AuthScreen          from './src/screens/AuthScreen';
 import { loadSheetsList }  from './src/utils/sheetsManager';
@@ -39,6 +40,7 @@ function AppContent() {
   const [sheetsLoading, setSheetsLoading] = useState(true);
   const [selectedSheet, setSelectedSheet] = useState(null);
   const [showCustom, setShowCustom]       = useState(false);
+  const [showJournal, setShowJournal]     = useState(false);
   const [isFirstSetup, setIsFirstSetup]   = useState(false);
   const [syncing, setSyncing]             = useState(false);
 
@@ -176,13 +178,22 @@ function AppContent() {
               </TouchableOpacity>
             ),
             headerRight: () => (
-              <TouchableOpacity
-                onPress={() => setShowCustom(true)}
-                style={{ marginRight: 16, padding: 4 }}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={{ fontSize: 20 }}>✏️</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setShowJournal(true)}
+                  style={{ padding: 6 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={{ fontSize: 20 }}>{'\u{1F4D3}'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowCustom(true)}
+                  style={{ padding: 6 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={{ fontSize: 20 }}>{'\u270F\uFE0F'}</Text>
+                </TouchableOpacity>
+              </View>
             ),
             headerTitle: () => (
               <Text style={{ color: '#cdd6f4', fontWeight: 'bold', fontSize: 16 }} numberOfLines={1}>
@@ -201,6 +212,7 @@ function AppContent() {
           <Tab.Screen name="Turno"       component={TurnAssistantScreen} options={{ title: 'Assistente de Turno' }} />
         </Tab.Navigator>
 
+        <JournalModal visible={showJournal} onClose={() => setShowJournal(false)} />
         <CustomizationModal
           visible={showCustom}
           onClose={handleCloseCustom}

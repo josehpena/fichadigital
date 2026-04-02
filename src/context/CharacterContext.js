@@ -184,6 +184,7 @@ function reducer(state, action) {
         titles,
         inventory:        p.inventory        ?? INITIAL_CHARACTER.inventory,
         narrativeEffects: p.narrativeEffects ?? INITIAL_CHARACTER.narrativeEffects,
+        journal:          p.journal          ?? INITIAL_CHARACTER.journal,
         settings,
       };
     }
@@ -907,6 +908,52 @@ function reducer(state, action) {
     case 'INVENTORY_CHANGE_MOEDAS': {
       const novas = Math.max(0, (state.inventory.moedas || 0) + action.delta);
       return { ...state, inventory: { ...state.inventory, moedas: novas } };
+    }
+
+    // { entry: { categoria, titulo, conteudo, tags?, status? } }
+    case 'JOURNAL_ADD': {
+      const entry = {
+        id: `note_${Date.now()}`,
+        categoria: action.entry.categoria ?? 'nota',
+        titulo: action.entry.titulo ?? '',
+        conteudo: action.entry.conteudo ?? '',
+        tags: action.entry.tags ?? [],
+        pinned: false,
+        status: action.entry.status ?? null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      return {
+        ...state,
+        journal: {
+          ...state.journal,
+          entries: [entry, ...(state.journal?.entries ?? [])],
+        },
+      };
+    }
+
+    // { id, field, value }
+    case 'JOURNAL_UPDATE': {
+      const entries = (state.journal?.entries ?? []).map(e =>
+        e.id === action.id
+          ? { ...e, [action.field]: action.value, updatedAt: Date.now() }
+          : e
+      );
+      return { ...state, journal: { ...state.journal, entries } };
+    }
+
+    // { id }
+    case 'JOURNAL_DELETE': {
+      const entries = (state.journal?.entries ?? []).filter(e => e.id !== action.id);
+      return { ...state, journal: { ...state.journal, entries } };
+    }
+
+    // { id } — toggle pin
+    case 'JOURNAL_TOGGLE_PIN': {
+      const entries = (state.journal?.entries ?? []).map(e =>
+        e.id === action.id ? { ...e, pinned: !e.pinned, updatedAt: Date.now() } : e
+      );
+      return { ...state, journal: { ...state.journal, entries } };
     }
 
     case 'RESET':
