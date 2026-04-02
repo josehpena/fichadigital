@@ -223,12 +223,14 @@ const MANA_REDUCE_TITLES = ['feiticeiro'];
 
 // Habilidades que adicionam stats ao BLOQUEIO
 // confronto Nv1 = vigor incondicional; Nv2 = robustez condicional (mostramos mas não somamos)
-// bloqueador Nv1 = briga condicional
+// bloqueador Nv1 = briga (condicional: "se briga < bloqueio base")
 // fatiador Nv1 = armasBrancas (dano E bloqueio)
 const WEAPON_SKILL_BLOCK_MODS = {
-  fatiador:  { minLevel: 1, statKey: 'armasBrancas', statLabel: 'Armas Brancas',
+  fatiador:   { minLevel: 1, statKey: 'armasBrancas', statLabel: 'Armas Brancas',
     multiplier: (selLv) => selLv >= 3 ? 2 : 1, unconditional: true },
-  confronto: { minLevel: 1, statKey: 'vigor',        statLabel: 'Vigor',
+  bloqueador: { minLevel: 1, statKey: 'briga',        statLabel: 'Briga',
+    multiplier: () => 1, unconditional: true },
+  confronto:  { minLevel: 1, statKey: 'vigor',        statLabel: 'Vigor',
     multiplier: () => 1, unconditional: true },
 };
 
@@ -801,7 +803,7 @@ function SkillLevelPicker({ sk, selLv, onChange }) {
 
 function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   const { character, dispatch } = useCharacter();
-  const { skills } = character;
+  const { skills, attributes: attrs } = character;
   const reflexo  = skills?.reflexo  ?? 0;
   const esportes = skills?.esportes ?? 0;
   const [mode, setMode]       = useState('bloquear');
@@ -812,10 +814,97 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   // Todas as armas com habilidades relevantes para bloqueio
   const blockWeapons = getAllBlockSkills(character.equipment, character.skillTree?.acquiredTrails);
 
-  // Bônus numéricos incondicionais ao bloqueio
-  const blockBonuses  = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
+  // Coleta tiras de couro de todos os equipamentos (arma + armaduras + acessórios)
+  const allTiras = [];
+  for (const slotKey of HAND_SLOTS) {
+    const slot = character.equipment?.[slotKey];
+    if (slot) for (const t of (slot.tiras ?? [])) allTiras.push(t);
+  }
+  for (const slotKey of ARMOR_SLOTS) {
+    const slot = character.equipment?.[slotKey];
+    if (slot && slot.durabilidade > 0) for (const t of (slot.tiras ?? [])) allTiras.push(t);
+  }
+  for (const acc of (character.accessories ?? [])) {
+    for (const t of (acc.tiras ?? [])) allTiras.push(t);
+  }
+
+  // Bônus numéricos incondicionais ao bloqueio (base das skills)
+  const blockBonuses    = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
   const blockBonusTotal = blockBonuses.reduce((a, b) => a + b.val, 0);
-  const blockTotal    = totalArmadura + blockBonusTotal;
+
+  // Tiras de equipamento aplicadas ao bloqueio (para cada skill ativa)
+  const blockTiraBonuses = [];
+  const fatiadorLv   = blockLevels.fatiador   ?? 0;
+  const bloqueadorLv = blockLevels.bloqueador ?? 0;
+  const confrontoLv  = blockLevels.confronto  ?? 0;
+
+  if (fatiadorLv >= 1) {
+    const tiraBrancas = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === 'armasBrancas' && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+    if (tiraBrancas > 0) {
+      const mult = fatiadorLv >= 3 ? 2 : 1;
+      blockTiraBonuses.push({
+        label: mult > 1 ? 'Armas Brancas×2 (tira)' : 'Armas Brancas (tira)',
+        val: tiraBrancas * mult,
+      });
+    }
+  }
+  if (bloqueadorLv >= 1) {
+    const tiraBriga = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === 'briga' && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+    if (tiraBriga > 0) blockTiraBonuses.push({ label: 'Briga (tira)', val: tiraBriga });
+  }
+  if (confrontoLv >= 1) {
+    const tiraVigor = allTiras
+      .filter(t => t.tipo === 'atributo' && t.subAttr === 'vigor' && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+    if (tiraVigor > 0) blockTiraBonuses.push({ label: 'Vigor (tira)', val: tiraVigor });
+  }
+
+  // Confronto Nv2: bônus de Robustez condicional ("se estiver perdendo no bloqueio")
+  // Calculamos o valor para exibição; o player aplica se a condição for verdadeira
+  let robustezCondicional = 0;
+  if (confrontoLv >= 2) {
+    const forca    = attrs?.robustez?.forca    ?? 0;
+    const destreza = attrs?.robustez?.destreza ?? 0;
+    const vigor    = attrs?.robustez?.vigor    ?? 0;
+    const attrTiras = allTiras
+      .filter(t => t.tipo === 'atributo' && ['forca', 'destreza', 'vigor'].includes(t.subAttr) && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+    robustezCondicional = forca + destreza + vigor + attrTiras;
+  }
+
+  // Fighter Nv2 (luvas_de_batalha): soma Briga em esquiva
+  const fighterLv = character.skillTree?.acquiredTrails?.luvas_de_batalha?.skills?.fighter ?? 0;
+  const brigaEsquiva = fighterLv >= 2
+    ? (skills?.briga ?? 0) + allTiras.filter(t => t.tipo === 'pericia' && t.skill === 'briga' && t.valor).reduce((s, t) => s + t.valor, 0)
+    : 0;
+
+  // Títulos com ativo de bloqueio
+  const acquiredTitles = character.titles?.acquired ?? [];
+  const hasDefensor    = acquiredTitles.includes('defensor');
+  const hasEncoracado  = acquiredTitles.includes('encouracado');
+  const [titleToggles, setTitleToggles] = useState({});
+
+  // Defensor ativo: soma Robustez (forca+destreza+vigor + tiras de atributo físico)
+  let defensorBonus = 0;
+  if (hasDefensor && titleToggles.defensor) {
+    const f = attrs?.robustez?.forca    ?? 0;
+    const d = attrs?.robustez?.destreza ?? 0;
+    const v = attrs?.robustez?.vigor    ?? 0;
+    const attrTiras = allTiras
+      .filter(t => t.tipo === 'atributo' && ['forca', 'destreza', 'vigor'].includes(t.subAttr) && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+    defensorBonus = f + d + v + attrTiras;
+  }
+
+  // Encouraçado ativo: soma Armadura novamente no bloqueio
+  const encouracadoBonus = (hasEncoracado && titleToggles.encouracado) ? totalArmadura : 0;
+
+  const blockTiraTotal = blockTiraBonuses.reduce((a, b) => a + b.val, 0);
+  const blockTotal     = totalArmadura + blockBonusTotal + blockTiraTotal + defensorBonus + encouracadoBonus;
 
   // Efeitos especiais
   const allBlockSkills = blockWeapons.flatMap(w => w.skills);
@@ -866,7 +955,34 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
                 </View>
               </React.Fragment>
             ))}
-            {blockBonuses.length > 0 && (
+            {blockTiraBonuses.map(b => (
+              <React.Fragment key={b.label}>
+                <Text style={s.formulaOp}>+</Text>
+                <View style={s.formulaPart}>
+                  <Text style={s.formulaVal}>{b.val}</Text>
+                  <Text style={s.formulaLbl}>{b.label}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+            {defensorBonus > 0 && (
+              <>
+                <Text style={s.formulaOp}>+</Text>
+                <View style={s.formulaPart}>
+                  <Text style={s.formulaVal}>{defensorBonus}</Text>
+                  <Text style={s.formulaLbl}>Robustez (Defensor)</Text>
+                </View>
+              </>
+            )}
+            {encouracadoBonus > 0 && (
+              <>
+                <Text style={s.formulaOp}>+</Text>
+                <View style={s.formulaPart}>
+                  <Text style={s.formulaVal}>{encouracadoBonus}</Text>
+                  <Text style={s.formulaLbl}>Armadura (Encouraçado)</Text>
+                </View>
+              </>
+            )}
+            {(blockBonuses.length > 0 || blockTiraBonuses.length > 0 || defensorBonus > 0 || encouracadoBonus > 0) && (
               <>
                 <Text style={s.formulaOp}>=</Text>
                 <View style={[s.formulaPart, s.formulaTotal]}>
@@ -876,6 +992,11 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               </>
             )}
           </View>
+          {robustezCondicional > 0 && (
+            <Text style={s.formulaNoteConditional}>
+              ★ Confronto Nv2 — se perdendo: +{robustezCondicional} Robustez
+            </Text>
+          )}
           <Text style={s.formulaNote}>Reduz dano recebido pelo valor de bloqueio</Text>
         </View>
       ) : (
@@ -891,6 +1012,15 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               <Text style={s.formulaVal}>{esportes}</Text>
               <Text style={s.formulaLbl}>Esportes</Text>
             </View>
+            {brigaEsquiva > 0 && (
+              <>
+                <Text style={s.formulaOp}>+</Text>
+                <View style={s.formulaPart}>
+                  <Text style={s.formulaVal}>{brigaEsquiva}</Text>
+                  <Text style={s.formulaLbl}>Briga (Fighter)</Text>
+                </View>
+              </>
+            )}
             <Text style={s.formulaOp}>+</Text>
             <View style={s.formulaPart}>
               <Text style={s.formulaVal}>d20</Text>
@@ -921,6 +1051,36 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               ))}
             </View>
           ))}
+        </>
+      )}
+
+      {/* Ativos de títulos no bloqueio */}
+      {mode === 'bloquear' && (hasDefensor || hasEncoracado) && (
+        <>
+          <Text style={s.subLabel}>Ativos de Título</Text>
+          {hasDefensor && (
+            <TouchableOpacity
+              style={[s.titleToggleBtn, titleToggles.defensor && s.titleToggleBtnOn]}
+              onPress={() => setTitleToggles(p => ({ ...p, defensor: !p.defensor }))}
+            >
+              <Text style={[s.titleToggleText, titleToggles.defensor && s.titleToggleTextOn]}>
+                🛡 Defensor — Soma Robustez ({
+                  (attrs?.robustez?.forca ?? 0) + (attrs?.robustez?.destreza ?? 0) + (attrs?.robustez?.vigor ?? 0)
+                  + allTiras.filter(t => t.tipo === 'atributo' && ['forca','destreza','vigor'].includes(t.subAttr) && t.valor).reduce((s,t)=>s+t.valor,0)
+                })
+              </Text>
+            </TouchableOpacity>
+          )}
+          {hasEncoracado && (
+            <TouchableOpacity
+              style={[s.titleToggleBtn, titleToggles.encouracado && s.titleToggleBtnOn]}
+              onPress={() => setTitleToggles(p => ({ ...p, encouracado: !p.encouracado }))}
+            >
+              <Text style={[s.titleToggleText, titleToggles.encouracado && s.titleToggleTextOn]}>
+                🛡 Encouraçado — Soma Armadura ({totalArmadura})
+              </Text>
+            </TouchableOpacity>
+          )}
         </>
       )}
 
@@ -1301,7 +1461,12 @@ const s = StyleSheet.create({
   formulaOp:    { color: '#45475a', fontSize: 18, fontWeight: 'bold', alignSelf: 'center' },
   formulaTotal: { backgroundColor: '#1e3a5f', borderRadius: 8, padding: 6 },
   formulaTotalVal: { color: '#89b4fa', fontSize: 22, fontWeight: 'bold' },
-  formulaNote:  { color: '#45475a', fontSize: 11, marginTop: 8, fontStyle: 'italic' },
+  formulaNote:            { color: '#45475a', fontSize: 11, marginTop: 8, fontStyle: 'italic' },
+  formulaNoteConditional: { color: '#f9e2af', fontSize: 11, marginTop: 6, fontStyle: 'italic' },
+  titleToggleBtn:     { backgroundColor: '#1e1e2e', borderRadius: 10, borderWidth: 1, borderColor: '#45475a', padding: 10, marginBottom: 6 },
+  titleToggleBtnOn:   { backgroundColor: '#1d3a2a', borderColor: '#a6e3a1' },
+  titleToggleText:    { color: '#6c7086', fontSize: 12, fontWeight: '600' },
+  titleToggleTextOn:  { color: '#a6e3a1' },
   statLine:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   statLineLabel:{ color: '#6c7086', fontSize: 13 },
   statLineVal:  { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
