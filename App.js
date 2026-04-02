@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, TouchableOpacity, View, ActivityIndicator, StyleSheet } from 'react-native';
 
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { CharacterProvider } from './src/context/CharacterContext';
 import HomeScreen          from './src/screens/HomeScreen';
 import AttributesScreen    from './src/screens/AttributesScreen';
@@ -16,7 +17,9 @@ import InventoryScreen     from './src/screens/InventoryScreen';
 import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
 import CustomizationModal  from './src/components/CustomizationModal';
 import SheetSelectScreen   from './src/screens/SheetSelectScreen';
+import AuthScreen          from './src/screens/AuthScreen';
 import { loadSheetsList }  from './src/utils/sheetsManager';
+import { fullSync, startNetworkListener, stopNetworkListener } from './src/services/syncService';
 
 const Tab = createBottomTabNavigator();
 
@@ -31,20 +34,43 @@ const TAB_ICONS = {
   Turno:       '⚔️',
 };
 
-export default function App() {
+function AppContent() {
+  const { user, loading: authLoading, signOut } = useAuth();
   const [sheetsLoading, setSheetsLoading] = useState(true);
-  const [selectedSheet, setSelectedSheet] = useState(null); // { id, name, createdAt }
+  const [selectedSheet, setSelectedSheet] = useState(null);
   const [showCustom, setShowCustom]       = useState(false);
   const [isFirstSetup, setIsFirstSetup]   = useState(false);
+  const [syncing, setSyncing]             = useState(false);
 
-  // Carrega lista de fichas na inicialização
+  // Sync ao logar e carrega fichas
   useEffect(() => {
-    loadSheetsList().then(list => {
+    if (!user) {
       setSheetsLoading(false);
-      // Se só há uma ficha e foi migrada, seleciona automaticamente
-      // (comportamento anterior mantido)
-    });
-  }, []);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setSyncing(true);
+      try {
+        await fullSync(user.id);
+      } catch {
+        // Offline ou erro — continua com dados locais
+      }
+      if (cancelled) return;
+      setSyncing(false);
+      await loadSheetsList();
+      setSheetsLoading(false);
+    })();
+
+    // Inicia listener de reconexao
+    startNetworkListener(() => user?.id);
+
+    return () => {
+      cancelled = true;
+      stopNetworkListener();
+    };
+  }, [user]);
 
   function handleSelectSheet(sheet) {
     setIsFirstSetup(false);
@@ -54,7 +80,7 @@ export default function App() {
   function handleNewSheet(sheet) {
     setIsFirstSetup(true);
     setSelectedSheet(sheet);
-    setShowCustom(true); // Abre personalização automaticamente para nova ficha
+    setShowCustom(true);
   }
 
   function handleCloseCustom() {
@@ -62,8 +88,8 @@ export default function App() {
     setIsFirstSetup(false);
   }
 
-  // Tela de carregamento
-  if (sheetsLoading) {
+  // Tela de carregamento (auth)
+  if (authLoading) {
     return (
       <SafeAreaProvider>
         <View style={appStyles.loading}>
@@ -74,20 +100,53 @@ export default function App() {
     );
   }
 
-  // Tela de seleção de fichas
-  if (!selectedSheet) {
+  // Tela de login
+  if (!user) {
     return (
       <SafeAreaProvider>
         <StatusBar style="light" />
-        <SheetSelectScreen onSelect={handleSelectSheet} onNew={handleNewSheet} />
+        <AuthScreen />
       </SafeAreaProvider>
     );
   }
 
-  // Tela principal — CharacterProvider usa key para resetar estado ao trocar ficha
+  // Tela de carregamento (sync + fichas)
+  if (sheetsLoading || syncing) {
+    return (
+      <SafeAreaProvider>
+        <View style={appStyles.loading}>
+          <Text style={appStyles.loadingTitle}>Ficha Digital</Text>
+          <Text style={appStyles.syncText}>Sincronizando dados...</Text>
+          <ActivityIndicator color="#89b4fa" style={{ marginTop: 16 }} />
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
+  // Tela de selecao de fichas
+  if (!selectedSheet) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <SheetSelectScreen
+          onSelect={handleSelectSheet}
+          onNew={handleNewSheet}
+          userId={user.id}
+          onSignOut={signOut}
+        />
+      </SafeAreaProvider>
+    );
+  }
+
+  // Tela principal
   return (
     <SafeAreaProvider>
-    <CharacterProvider key={selectedSheet.id} sheetId={selectedSheet.id}>
+    <CharacterProvider
+      key={selectedSheet.id}
+      sheetId={selectedSheet.id}
+      userId={user.id}
+      sheetName={selectedSheet.name}
+    >
       <NavigationContainer>
         <StatusBar style="light" />
         <Tab.Navigator
@@ -153,6 +212,14 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
 const appStyles = StyleSheet.create({
   loading: {
     flex: 1, backgroundColor: '#11111b',
@@ -160,5 +227,8 @@ const appStyles = StyleSheet.create({
   },
   loadingTitle: {
     color: '#cdd6f4', fontSize: 28, fontWeight: '800', letterSpacing: 1,
+  },
+  syncText: {
+    color: '#6c7086', fontSize: 14, marginTop: 8,
   },
 });

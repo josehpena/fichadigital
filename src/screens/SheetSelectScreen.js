@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { loadSheetsList, createSheet, deleteSheet } from '../utils/sheetsManager';
 
-export default function SheetSelectScreen({ onSelect, onNew }) {
+export default function SheetSelectScreen({ onSelect, onNew, userId, onSignOut }) {
   const [sheets, setSheets]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showModal, setShowModal]   = useState(false);
@@ -38,7 +38,7 @@ export default function SheetSelectScreen({ onSelect, onNew }) {
         {
           text: 'Deletar', style: 'destructive',
           onPress: async () => {
-            await deleteSheet(sheet.id);
+            await deleteSheet(sheet.id, userId);
             setSheets(s => s.filter(x => x.id !== sheet.id));
           },
         },
@@ -56,6 +56,11 @@ export default function SheetSelectScreen({ onSelect, onNew }) {
       <View style={styles.header}>
         <Text style={styles.appTitle}>Ficha Digital</Text>
         <Text style={styles.appSub}>Escolha sua ficha</Text>
+        {onSignOut && (
+          <TouchableOpacity style={styles.signOutBtn} onPress={onSignOut}>
+            <Text style={styles.signOutText}>Sair da conta</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Lista de fichas */}
@@ -130,6 +135,8 @@ const styles = StyleSheet.create({
   },
   appTitle: { color: '#cdd6f4', fontSize: 34, fontWeight: '800', letterSpacing: 1 },
   appSub:   { color: '#6c7086', fontSize: 14, marginTop: 4 },
+  signOutBtn:  { marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: '#313244' },
+  signOutText: { color: '#f38ba8', fontSize: 13, fontWeight: '600' },
 
   list:      { padding: 16, paddingBottom: 120 },
   emptyText: { color: '#45475a', textAlign: 'center', marginTop: 48, fontSize: 15, lineHeight: 24 },
