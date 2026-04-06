@@ -24,6 +24,18 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ed7f4bd6-27c0-49b1-af73-c6b2e9b76825"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ed7f4bd6-27c0-49b1-af73-c6b2e9b76825"
+      }
+    },
+    "owner": "josehpena"
   }
 }
