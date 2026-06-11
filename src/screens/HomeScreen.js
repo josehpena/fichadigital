@@ -6,8 +6,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import StatusCard from '../components/StatusCard';
-import { computeDefenseTotals, COMPUTED_STATUS_KEYS, STATUS_LABELS, ATTRIBUTE_LABELS } from '../data/initialCharacter';
+import { computeDefenseTotals, COMPUTED_STATUS_KEYS, STATUS_LABELS, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TITLE_BY_ID } from '../data/titlesData';
+import { TRAILS_MAGIAS } from '../data/trailsData';
+import { SUBRACE_BY_ID, isConditionActive } from '../data/racesData';
 
 // ─── Modal de Efeito Narrativo ────────────────────────────────────────────────
 const STATUS_KEYS_SELECTABLE = COMPUTED_STATUS_KEYS; // vida, energia, mana, forcaDeVontade
@@ -227,6 +229,60 @@ export default function HomeScreen() {
       <View style={styles.sectionBox}>
         <Text style={styles.sectionTitle}>Características</Text>
 
+        {/* Bloco da raça/subraça escolhida */}
+        {(() => {
+          const sub = character.race?.subraceId ? SUBRACE_BY_ID[character.race.subraceId] : null;
+          if (!sub) return null;
+
+          return (
+            <View style={styles.titleBlock}>
+              <Text style={styles.titleBlockName}>
+                {sub.raceNome} · {sub.nome}
+              </Text>
+
+              {/* Bônus de status mecânicos (Elfos da Lua: +5 Mana, etc.) */}
+              {(sub.statusBonuses ?? []).map((b, i) => (
+                <Text key={`sb-${i}`} style={styles.beneficioText}>
+                  • +{b.delta} {STATUS_LABELS[b.status] ?? b.status}
+                </Text>
+              ))}
+
+              {/* Magias iniciais (Wanderstein) */}
+              {character.race?.startingMagicTrail && sub.startingMagic && (() => {
+                const trail = TRAILS_MAGIAS.find(t => t.id === character.race.startingMagicTrail);
+                return (
+                  <Text style={styles.beneficioText}>
+                    • Inicia com {sub.startingMagic.quantidade} magias nível {sub.startingMagic.nivel} da Maestria {trail?.nome ?? character.race.startingMagicTrail}
+                  </Text>
+                );
+              })()}
+
+              {/* Características de texto (com destaque condicional) */}
+              {(sub.caracteristicas ?? []).map((c, i) => {
+                const active = isConditionActive(c.condicao, character);
+                return (
+                  <Text
+                    key={`c-${i}`}
+                    style={[
+                      styles.beneficioText,
+                      active === true && styles.beneficioTextActive,
+                    ]}
+                  >
+                    • {c.texto}
+                  </Text>
+                );
+              })}
+
+              {/* Perícia escolhida com boost até 8 */}
+              {character.race?.skillBoostSkill && (
+                <Text style={styles.beneficioTextHint}>
+                  ★ Perícia escolhida (até nível 8): {SKILL_LABELS[character.race.skillBoostSkill] ?? character.race.skillBoostSkill}
+                </Text>
+              )}
+            </View>
+          );
+        })()}
+
         {/* Benefícios dos títulos adquiridos */}
         {(character.titles?.acquired ?? []).map(titleId => {
           const title = TITLE_BY_ID[titleId];
@@ -241,13 +297,13 @@ export default function HomeScreen() {
           );
         })}
 
-        {/* Campo livre (racial, dons, etc.) */}
+        {/* Campo livre extra (anotações narrativas) */}
         <TextInput
           style={styles.racialInput}
           multiline
           value={character.racialTraits}
           onChangeText={(v) => dispatch({ type: 'SET_RACIAL_TRAITS', value: v })}
-          placeholder="Características adicionais (raça, dons...)..."
+          placeholder="Anotações adicionais (dons, marcas, observações...)..."
           placeholderTextColor="#6c7086"
         />
       </View>
@@ -346,7 +402,9 @@ const styles = StyleSheet.create({
   },
   titleBlock:     { marginBottom: 8 },
   titleBlockName: { color: '#f9e2af', fontSize: 12, fontWeight: '700', marginBottom: 3 },
-  beneficioText:  { color: '#cdd6f4', fontSize: 13, lineHeight: 19, paddingLeft: 4 },
+  beneficioText:       { color: '#cdd6f4', fontSize: 13, lineHeight: 19, paddingLeft: 4 },
+  beneficioTextActive: { color: '#a6e3a1', textDecorationLine: 'underline' },
+  beneficioTextHint:   { color: '#f9e2af', fontSize: 12, fontStyle: 'italic', paddingLeft: 4, marginTop: 4 },
   racialInput:    { color: '#a6adc8', fontSize: 13, minHeight: 40, textAlignVertical: 'top', marginTop: 6 },
 
   effectsTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },

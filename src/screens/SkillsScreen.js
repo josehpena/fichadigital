@@ -9,19 +9,24 @@ const CATEGORY_COLORS = {
   Mentais: '#89dceb',
 };
 
-const MAX_SKILL = 5;
+const DEFAULT_MAX_SKILL = 5;
 
 function SkillRow({ skill, xpCost }) {
   const { character, dispatch } = useCharacter();
   const value      = character.skills[skill] ?? 0;
   const currentXp  = character.status.xp.current;
-  const nextCost   = value < MAX_SKILL ? (value + 1) * xpCost : null;
+  const isBoosted  = character.race?.skillBoostSkill === skill;
+  const maxSkill   = isBoosted ? 8 : DEFAULT_MAX_SKILL;
+  const nextCost   = value < maxSkill ? (value + 1) * xpCost : null;
 
   return (
     <View style={styles.skillRow}>
-      <Text style={styles.skillLabel}>{SKILL_LABELS[skill]}</Text>
+      <Text style={styles.skillLabel}>
+        {SKILL_LABELS[skill]}
+        {isBoosted && <Text style={styles.boostBadge}>  ★</Text>}
+      </Text>
       <View style={styles.dotsRow}>
-        {Array.from({ length: MAX_SKILL }).map((_, i) => {
+        {Array.from({ length: maxSkill }).map((_, i) => {
           const targetLevel = i + 1;
           const isActive    = i < value;
           const cost        = targetLevel > value ? xpCostForRange(value, targetLevel, xpCost) : 0;
@@ -156,7 +161,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#2e2e4e',
   },
   skillLabel: { color: '#cdd6f4', fontSize: 13, flex: 1 },
-  dotsRow:    { flexDirection: 'row', gap: 7, marginRight: 8 },
+  boostBadge: { color: '#f9e2af', fontSize: 13, fontWeight: '700' },
+  dotsRow:    { flexDirection: 'row', gap: 6, marginRight: 8, flexWrap: 'wrap', flexShrink: 1 },
   dot: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5 },
   dotFilled: { backgroundColor: '#89b4fa', borderColor: '#89b4fa' },
   dotEmpty:  { backgroundColor: 'transparent', borderColor: '#45475a' },
