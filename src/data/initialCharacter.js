@@ -13,9 +13,9 @@ export function computeMaxValues(attrs) {
 
 // ─── Atributos iniciais ───────────────────────────────────────────────────────
 const INITIAL_ATTRIBUTES = {
-  robustez:    { forca: 0, destreza: 0, vigor: 0 },
-  reputacao:   { manha: 0, carisma: 0, etiqueta: 0 },
-  concentracao:{ percepcao: 0, raciocinio: 0, inteligencia: 0 },
+  robustez:    { forca: 1, destreza: 1, vigor: 1 },
+  reputacao:   { manha: 1, carisma: 1, etiqueta: 1 },
+  concentracao:{ percepcao: 1, raciocinio: 1, inteligencia: 1 },
 };
 
 const initMax = computeMaxValues(INITIAL_ATTRIBUTES);
