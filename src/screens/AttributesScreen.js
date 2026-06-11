@@ -13,13 +13,13 @@ function SubAttrRow({ group, subAttr, xpCost }) {
   const { character, dispatch } = useCharacter();
   const value    = character.attributes[group][subAttr];
   const currentXp = character.status.xp.current;
-  const nextLevelCost = value < 10 ? (value + 1) * xpCost : null;
+  const nextLevelCost = value < 5 ? (value + 1) * xpCost : null;
 
   return (
     <View style={styles.subRow}>
       <Text style={styles.subLabel}>{ATTRIBUTE_LABELS[subAttr]}</Text>
       <View style={styles.dotsRow}>
-        {Array.from({ length: 10 }).map((_, i) => {
+        {Array.from({ length: 5 }).map((_, i) => {
           const targetLevel = i + 1;
           const isActive    = i < value;
           const cost        = targetLevel > value ? xpCostForRange(value, targetLevel, xpCost) : 0;

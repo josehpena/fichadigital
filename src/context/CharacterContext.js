@@ -223,7 +223,7 @@ function reducer(state, action) {
     case 'CHANGE_ATTRIBUTE': {
       const group    = state.attributes[action.group];
       const curVal   = group[action.subAttr] || 0;
-      const newVal   = clamp(curVal + action.delta, 0, 10);
+      const newVal   = clamp(curVal + action.delta, 0, 5);
       const newAttrs = {
         ...state.attributes,
         [action.group]: { ...group, [action.subAttr]: newVal },
