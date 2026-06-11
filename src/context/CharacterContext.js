@@ -152,7 +152,7 @@ function reducer(state, action) {
 
     case 'LOAD': {
       const p = action.payload;
-      if (!p.attributes?.reputacao?.manha) return INITIAL_CHARACTER;
+      if (p.attributes?.reputacao?.manha == null) return INITIAL_CHARACTER;
       const status = applyComputedMaxes(p.status, p.attributes, computeAllStatusBonuses(p));
       // Mescla settings: preserva customizações salvas, garante campos novos
       const savedSettings = p.settings ?? {};
@@ -203,6 +203,7 @@ function reducer(state, action) {
     // { raceId, subraceId, skillBoostSkill?, startingMagicTrail?, startingMagicSkills? }
     // Aplica raça à ficha: bônus de status, perícia escolhida (até 8) e magias iniciais.
     case 'SET_RACE': {
+      if (state.race) return state; // raça é escolhida apenas na criação da ficha
       const sub = SUBRACE_BY_ID[action.subraceId];
       if (!sub) return state;
 

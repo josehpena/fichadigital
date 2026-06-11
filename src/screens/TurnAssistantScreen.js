@@ -1279,7 +1279,11 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const d20Value   = Math.min(20, Math.max(0, parseInt(d20Input) || 0));
   const hasD20     = d20Input.trim() !== '' && d20Value > 0;
   const totalCast  = baseCast + d20Value;
-  const intensityBase = hasD20 ? Math.floor(totalCast / 5) + weaponIntensityBonusTotal + spellIntensityBonus : null;
+  // Feiticeiro: "Aumenta a INTENSIDADE de suas magias em 1" (soma antes de dobrar)
+  const feiticeiroIntensity = acquiredTitles.includes('feiticeiro') ? 1 : 0;
+  const intensityBase = hasD20
+    ? Math.floor(totalCast / 5) + weaponIntensityBonusTotal + spellIntensityBonus + feiticeiroIntensity
+    : null;
   const intensidade   = intensityBase === null
     ? null
     : (hasDoubleAvailable && doubleIntensidade ? intensityBase * 2 : intensityBase);
@@ -1394,6 +1398,12 @@ function MagicPanel({ actionsLeft, onConfirm }) {
               <View style={s.castResultLine}>
                 <Text style={s.castResultLabel}>+ Magia Nv {spell?.level} (bônus de intensidade)</Text>
                 <Text style={[s.castResultVal, { fontSize: 16, color: '#a6e3a1' }]}>{spellIntensityBonus}</Text>
+              </View>
+            )}
+            {feiticeiroIntensity > 0 && (
+              <View style={s.castResultLine}>
+                <Text style={s.castResultLabel}>+ Feiticeiro (título)</Text>
+                <Text style={[s.castResultVal, { fontSize: 16, color: '#a6e3a1' }]}>{feiticeiroIntensity}</Text>
               </View>
             )}
             {hasDoubleAvailable && doubleIntensidade && (
