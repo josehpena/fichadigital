@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal,
+  View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Modal,
 } from 'react-native';
 import { useCharacter } from '../context/CharacterContext';
 import { HAND_SLOTS, ARMOR_SLOTS, EQUIP_LABELS, computeDefenseTotals, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
@@ -1155,6 +1155,13 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const [selSpell, setSelSpell] = useState(null);
   const [doubleFaixo, setDoubleAlcance] = useState(false);
   const [expanded, setExpanded]   = useState(null);
+  const [d20Input, setD20Input]   = useState('');
+
+  const baseCast   = raciocinio + magia + castBonus + tiraBonusTotal;
+  const d20Value   = Math.min(20, Math.max(0, parseInt(d20Input) || 0));
+  const hasD20     = d20Input.trim() !== '' && d20Value > 0;
+  const totalCast  = baseCast + d20Value;
+  const intensidade = hasD20 ? Math.floor(totalCast / 5) : null;
 
   const spell = spells.find(sp => sp.skillId === selSpell) ?? null;
   const custoBruto = spell ? Math.max(1, spell.custo - manaReduce) : 0;
@@ -1167,6 +1174,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
     onConfirm();
     setSelSpell(null);
     setDoubleAlcance(false);
+    setD20Input('');
   }
 
   if (spells.length === 0) {
@@ -1216,7 +1224,33 @@ function MagicPanel({ actionsLeft, onConfirm }) {
             <Text style={s.formulaLbl}>Dado</Text>
           </View>
         </View>
-        <Text style={s.formulaNote}>Base: {raciocinio + magia + castBonus + tiraBonusTotal} + d20 vs dificuldade</Text>
+        <Text style={s.formulaNote}>Base: {baseCast} + d20 vs dificuldade</Text>
+
+        {/* Input do d20 + total + intensidade */}
+        <View style={s.d20Row}>
+          <Text style={s.d20Label}>Resultado do d20:</Text>
+          <TextInput
+            style={s.d20Input}
+            keyboardType="number-pad"
+            value={d20Input}
+            onChangeText={(v) => setD20Input(v.replace(/[^0-9]/g, '').slice(0, 2))}
+            placeholder="—"
+            placeholderTextColor="#45475a"
+            maxLength={2}
+          />
+        </View>
+        {hasD20 && (
+          <View style={s.castResultBox}>
+            <View style={s.castResultLine}>
+              <Text style={s.castResultLabel}>Total</Text>
+              <Text style={s.castResultVal}>{totalCast}</Text>
+            </View>
+            <View style={s.castResultLine}>
+              <Text style={s.castResultLabel}>Intensidade (total ÷ 5)</Text>
+              <Text style={[s.castResultVal, { color: '#cba6f7' }]}>{intensidade}</Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Lista de magias */}
@@ -1553,6 +1587,26 @@ const s = StyleSheet.create({
   effectTagText:   { fontSize: 12, fontWeight: '700' },
   effectTagSkill:      { borderColor: '#f9e2af' },
   effectTagTextSkill:  { color: '#f9e2af', fontSize: 12, fontWeight: '700' },
+
+  // Input do d20 (conjuração)
+  d20Row: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginTop: 10, paddingTop: 10,
+    borderTopWidth: 1, borderTopColor: '#2e2e4e',
+  },
+  d20Label: { color: '#a6adc8', fontSize: 13, flex: 1 },
+  d20Input: {
+    width: 56, height: 36, borderRadius: 8,
+    backgroundColor: '#181825', borderWidth: 1, borderColor: '#45475a',
+    color: '#f9e2af', fontSize: 18, fontWeight: '700', textAlign: 'center',
+  },
+  castResultBox: {
+    marginTop: 8, backgroundColor: '#181825', borderRadius: 8,
+    padding: 10, borderWidth: 1, borderColor: '#cba6f740', gap: 4,
+  },
+  castResultLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  castResultLabel: { color: '#a6adc8', fontSize: 13 },
+  castResultVal: { color: '#cdd6f4', fontSize: 20, fontWeight: 'bold' },
 
   // Magias
   spellCard:       { backgroundColor: '#1e1e2e', borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#2e2e4e', overflow: 'hidden' },
