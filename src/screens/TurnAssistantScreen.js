@@ -232,7 +232,7 @@ const MAGIC_INTENSITY_WEAPON_SKILLS = {
   },
   varinha_ifurita: {
     ascensao: {
-      nv1: { source: 'skill', statKey: 'magia', label: 'Magia (Ascensão)' },
+      nv1: { source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
       nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
     },
   },
@@ -251,9 +251,9 @@ const MAGIC_SPELL_INTENSITY_BONUS = {
 // fatiador Nv1 = armasBrancas (dano E bloqueio)
 // source: 'skill' lê de character.skills; 'attr' lê de character.attributes[group][subAttr]
 const WEAPON_SKILL_BLOCK_MODS = {
-  fatiador:   { minLevel: 1, source: 'skill', statKey: 'armasBrancas', statLabel: 'Armas Brancas',
+  fatiador:   { minLevel: 1, source: 'skill', statKey: 'instinto', statLabel: 'Instinto',
     multiplier: (selLv) => selLv >= 3 ? 2 : 1, unconditional: true },
-  bloqueador: { minLevel: 1, source: 'skill', statKey: 'briga',        statLabel: 'Briga',
+  bloqueador: { minLevel: 1, source: 'skill', statKey: 'instinto', statLabel: 'Instinto',
     multiplier: () => 1, unconditional: true },
   confronto:  { minLevel: 1, source: 'attr', group: 'robustez', subAttr: 'vigor', statLabel: 'Vigor',
     multiplier: () => 1, unconditional: true },
@@ -304,12 +304,12 @@ function getBlockBonuses(blockWeapons, allLevels, characterSkills, characterAttr
 // minLevel = nível mínimo selecionado para o bônus entrar
 // tripleInTwoHand = true para respeitar a regra "perícia×3 em 2 mãos"
 const WEAPON_SKILL_DAMAGE_MODS = {
-  // fatiador (machado_do_norte + luvas_de_batalha): "Soma armas brancas no dano"
+  // fatiador (machado_do_norte + luvas_de_batalha): soma Instinto no dano
   // Nv3 duplica efeitos do Nv1 → multiplicador 2 quando selLv >= 3
-  fatiador: { minLevel: 1, statKey: 'armasBrancas', label: 'Armas Brancas', tripleInTwoHand: true,
+  fatiador: { minLevel: 1, statKey: 'instinto', label: 'Instinto', tripleInTwoHand: true,
     multiplier: (selLv) => selLv >= 3 ? 2 : 1 },
-  // fighter (luvas_de_batalha) Nv2: "Soma Briga em acerto e dano"
-  fighter:  { minLevel: 2, statKey: 'briga', label: 'Briga', tripleInTwoHand: true,
+  // fighter (luvas_de_batalha) Nv2: soma Instinto em acerto e dano
+  fighter:  { minLevel: 2, statKey: 'instinto', label: 'Instinto', tripleInTwoHand: true,
     multiplier: () => 1, acerto: true },
 };
 
@@ -873,22 +873,22 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   const confrontoLv  = maxLevelFor('confronto');
 
   if (fatiadorLv >= 1) {
-    const tiraBrancas = allTiras
-      .filter(t => t.tipo === 'pericia' && t.skill === 'armasBrancas' && t.valor)
+    const tiraInstinto = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === 'instinto' && t.valor)
       .reduce((s, t) => s + t.valor, 0);
-    if (tiraBrancas > 0) {
+    if (tiraInstinto > 0) {
       const mult = fatiadorLv >= 3 ? 2 : 1;
       blockTiraBonuses.push({
-        label: mult > 1 ? 'Armas Brancas×2 (tira)' : 'Armas Brancas (tira)',
-        val: tiraBrancas * mult,
+        label: mult > 1 ? 'Instinto×2 (tira)' : 'Instinto (tira)',
+        val: tiraInstinto * mult,
       });
     }
   }
   if (bloqueadorLv >= 1) {
-    const tiraBriga = allTiras
-      .filter(t => t.tipo === 'pericia' && t.skill === 'briga' && t.valor)
+    const tiraInstinto = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === 'instinto' && t.valor)
       .reduce((s, t) => s + t.valor, 0);
-    if (tiraBriga > 0) blockTiraBonuses.push({ label: 'Briga (tira)', val: tiraBriga });
+    if (tiraInstinto > 0) blockTiraBonuses.push({ label: 'Instinto (tira)', val: tiraInstinto });
   }
   if (confrontoLv >= 1) {
     const tiraVigor = allTiras
@@ -910,10 +910,10 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
     robustezCondicional = forca + destreza + vigor + attrTiras;
   }
 
-  // Fighter Nv2 (luvas_de_batalha): soma Briga em esquiva
+  // Fighter Nv2 (luvas_de_batalha): soma Instinto em esquiva
   const fighterLv = character.skillTree?.acquiredTrails?.luvas_de_batalha?.skills?.fighter ?? 0;
-  const brigaEsquiva = fighterLv >= 2
-    ? (skills?.briga ?? 0) + allTiras.filter(t => t.tipo === 'pericia' && t.skill === 'briga' && t.valor).reduce((s, t) => s + t.valor, 0)
+  const instintoEsquiva = fighterLv >= 2
+    ? (skills?.instinto ?? 0) + allTiras.filter(t => t.tipo === 'pericia' && t.skill === 'instinto' && t.valor).reduce((s, t) => s + t.valor, 0)
     : 0;
 
   // Títulos com ativo de bloqueio
@@ -1058,12 +1058,12 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               <Text style={s.formulaVal}>{esportes}</Text>
               <Text style={s.formulaLbl}>Esportes</Text>
             </View>
-            {brigaEsquiva > 0 && (
+            {instintoEsquiva > 0 && (
               <>
                 <Text style={s.formulaOp}>+</Text>
                 <View style={s.formulaPart}>
-                  <Text style={s.formulaVal}>{brigaEsquiva}</Text>
-                  <Text style={s.formulaLbl}>Briga (Fighter)</Text>
+                  <Text style={s.formulaVal}>{instintoEsquiva}</Text>
+                  <Text style={s.formulaLbl}>Instinto (Fighter)</Text>
                 </View>
               </>
             )}
