@@ -220,16 +220,42 @@ const REACTION_TITLES = {
 // Títulos que reduzem custo de mana das magias (efeito global, sem maestria)
 const MANA_REDUCE_TITLES = ['feiticeiro'];
 
+// Skills de armas (cetros, varinhas) que somam à INTENSIDADE da magia
+// source: 'attr' lê de attributes[group][subAttr]; 'skill' lê de skills[statKey]
+// Nv1 (Soma X na intensidade) e Nv2 (toggle: dobrar intensidade)
+const MAGIC_INTENSITY_WEAPON_SKILLS = {
+  cetro_aghanim: {
+    ascensao: {
+      nv1: { source: 'attr', group: 'concentracao', subAttr: 'inteligencia', label: 'Inteligência (Ascensão)' },
+      nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
+    },
+  },
+  varinha_ifurita: {
+    ascensao: {
+      nv1: { source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
+      nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
+    },
+  },
+};
+
+// Magias cujo efeito ao nível N adiciona valor fixo à INTENSIDADE de conjuração
+const MAGIC_SPELL_INTENSITY_BONUS = {
+  arcano: {
+    energia_arcana: { 2: 5, 3: 10 },
+  },
+};
+
 // Habilidades que adicionam stats ao BLOQUEIO
 // confronto Nv1 = vigor incondicional; Nv2 = robustez condicional (mostramos mas não somamos)
 // bloqueador Nv1 = briga (condicional: "se briga < bloqueio base")
 // fatiador Nv1 = armasBrancas (dano E bloqueio)
+// source: 'skill' lê de character.skills; 'attr' lê de character.attributes[group][subAttr]
 const WEAPON_SKILL_BLOCK_MODS = {
-  fatiador:   { minLevel: 1, statKey: 'armasBrancas', statLabel: 'Armas Brancas',
+  fatiador:   { minLevel: 1, source: 'skill', statKey: 'instinto', statLabel: 'Instinto',
     multiplier: (selLv) => selLv >= 3 ? 2 : 1, unconditional: true },
-  bloqueador: { minLevel: 1, statKey: 'briga',        statLabel: 'Briga',
+  bloqueador: { minLevel: 1, source: 'skill', statKey: 'instinto', statLabel: 'Instinto',
     multiplier: () => 1, unconditional: true },
-  confronto:  { minLevel: 1, statKey: 'vigor',        statLabel: 'Vigor',
+  confronto:  { minLevel: 1, source: 'attr', group: 'robustez', subAttr: 'vigor', statLabel: 'Vigor',
     multiplier: () => 1, unconditional: true },
 };
 
@@ -253,16 +279,20 @@ function getAllBlockSkills(equipment, acquiredTrails) {
   return out;
 }
 
-function getBlockBonuses(blockWeapons, allLevels, characterSkills) {
+function getBlockBonuses(blockWeapons, allLevels, characterSkills, characterAttrs) {
   const bonuses = [];
-  for (const { skills } of blockWeapons) {
+  for (const { slotKey, weaponNome, skills } of blockWeapons) {
+    const slotLevels = allLevels[slotKey] ?? {};
     for (const sk of skills) {
       const mod = WEAPON_SKILL_BLOCK_MODS[sk.id];
       if (!mod || !mod.unconditional) continue;
-      const selLv = allLevels[sk.id] ?? 0;
+      const selLv = slotLevels[sk.id] ?? 0;
       if (selLv < mod.minLevel) continue;
-      const val = (characterSkills[mod.statKey] ?? 0) * mod.multiplier(selLv);
-      bonuses.push({ label: mod.statLabel, val });
+      const base = mod.source === 'attr'
+        ? (characterAttrs?.[mod.group]?.[mod.subAttr] ?? 0)
+        : (characterSkills?.[mod.statKey] ?? 0);
+      const val = base * mod.multiplier(selLv);
+      bonuses.push({ label: mod.statLabel, val, slotKey, weaponNome });
     }
   }
   return bonuses;
@@ -274,12 +304,12 @@ function getBlockBonuses(blockWeapons, allLevels, characterSkills) {
 // minLevel = nível mínimo selecionado para o bônus entrar
 // tripleInTwoHand = true para respeitar a regra "perícia×3 em 2 mãos"
 const WEAPON_SKILL_DAMAGE_MODS = {
-  // fatiador (machado_do_norte + luvas_de_batalha): "Soma armas brancas no dano"
+  // fatiador (machado_do_norte + luvas_de_batalha): soma Instinto no dano
   // Nv3 duplica efeitos do Nv1 → multiplicador 2 quando selLv >= 3
-  fatiador: { minLevel: 1, statKey: 'armasBrancas', label: 'Armas Brancas', tripleInTwoHand: true,
+  fatiador: { minLevel: 1, statKey: 'instinto', label: 'Instinto', tripleInTwoHand: true,
     multiplier: (selLv) => selLv >= 3 ? 2 : 1 },
-  // fighter (luvas_de_batalha) Nv2: "Soma Briga em acerto e dano"
-  fighter:  { minLevel: 2, statKey: 'briga', label: 'Briga', tripleInTwoHand: true,
+  // fighter (luvas_de_batalha) Nv2: soma Instinto em acerto e dano
+  fighter:  { minLevel: 2, statKey: 'instinto', label: 'Instinto', tripleInTwoHand: true,
     multiplier: () => 1, acerto: true },
 };
 
@@ -806,7 +836,8 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   const reflexo  = skills?.reflexo  ?? 0;
   const esportes = skills?.esportes ?? 0;
   const [mode, setMode]       = useState('bloquear');
-  const [blockLevels, setBlockLevels] = useState({}); // { skillId: level }
+  // Estado por arma: { [slotKey]: { [skillId]: level } } — cada arma seleciona suas próprias habilidades
+  const [blockLevels, setBlockLevels] = useState({});
 
   const { totalArmadura } = computeDefenseTotals(character.equipment, character.accessories);
 
@@ -827,33 +858,37 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
     for (const t of (acc.tiras ?? [])) allTiras.push(t);
   }
 
-  // Bônus numéricos incondicionais ao bloqueio (base das skills)
-  const blockBonuses    = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
+  // Bônus numéricos incondicionais ao bloqueio (uma entrada por arma ativa)
+  const blockBonuses    = getBlockBonuses(blockWeapons, blockLevels, skills ?? {}, attrs ?? {});
   const blockBonusTotal = blockBonuses.reduce((a, b) => a + b.val, 0);
+
+  // Maior nível ativo de cada skill (entre todas as armas) — usado para tira/efeitos condicionais
+  const maxLevelFor = (skillId) =>
+    Math.max(0, ...Object.values(blockLevels).map(sl => sl?.[skillId] ?? 0));
 
   // Tiras de equipamento aplicadas ao bloqueio (para cada skill ativa)
   const blockTiraBonuses = [];
-  const fatiadorLv   = blockLevels.fatiador   ?? 0;
-  const bloqueadorLv = blockLevels.bloqueador ?? 0;
-  const confrontoLv  = blockLevels.confronto  ?? 0;
+  const fatiadorLv   = maxLevelFor('fatiador');
+  const bloqueadorLv = maxLevelFor('bloqueador');
+  const confrontoLv  = maxLevelFor('confronto');
 
   if (fatiadorLv >= 1) {
-    const tiraBrancas = allTiras
-      .filter(t => t.tipo === 'pericia' && t.skill === 'armasBrancas' && t.valor)
+    const tiraInstinto = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === 'instinto' && t.valor)
       .reduce((s, t) => s + t.valor, 0);
-    if (tiraBrancas > 0) {
+    if (tiraInstinto > 0) {
       const mult = fatiadorLv >= 3 ? 2 : 1;
       blockTiraBonuses.push({
-        label: mult > 1 ? 'Armas Brancas×2 (tira)' : 'Armas Brancas (tira)',
-        val: tiraBrancas * mult,
+        label: mult > 1 ? 'Instinto×2 (tira)' : 'Instinto (tira)',
+        val: tiraInstinto * mult,
       });
     }
   }
   if (bloqueadorLv >= 1) {
-    const tiraBriga = allTiras
-      .filter(t => t.tipo === 'pericia' && t.skill === 'briga' && t.valor)
+    const tiraInstinto = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === 'instinto' && t.valor)
       .reduce((s, t) => s + t.valor, 0);
-    if (tiraBriga > 0) blockTiraBonuses.push({ label: 'Briga (tira)', val: tiraBriga });
+    if (tiraInstinto > 0) blockTiraBonuses.push({ label: 'Instinto (tira)', val: tiraInstinto });
   }
   if (confrontoLv >= 1) {
     const tiraVigor = allTiras
@@ -875,10 +910,10 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
     robustezCondicional = forca + destreza + vigor + attrTiras;
   }
 
-  // Fighter Nv2 (luvas_de_batalha): soma Briga em esquiva
+  // Fighter Nv2 (luvas_de_batalha): soma Instinto em esquiva
   const fighterLv = character.skillTree?.acquiredTrails?.luvas_de_batalha?.skills?.fighter ?? 0;
-  const brigaEsquiva = fighterLv >= 2
-    ? (skills?.briga ?? 0) + allTiras.filter(t => t.tipo === 'pericia' && t.skill === 'briga' && t.valor).reduce((s, t) => s + t.valor, 0)
+  const instintoEsquiva = fighterLv >= 2
+    ? (skills?.instinto ?? 0) + allTiras.filter(t => t.tipo === 'pericia' && t.skill === 'instinto' && t.valor).reduce((s, t) => s + t.valor, 0)
     : 0;
 
   // Títulos com ativo de bloqueio
@@ -905,17 +940,29 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   const blockTiraTotal = blockTiraBonuses.reduce((a, b) => a + b.val, 0);
   const blockTotal     = totalArmadura + blockBonusTotal + blockTiraTotal + defensorBonus + encouracadoBonus;
 
-  // Efeitos especiais
-  const allBlockSkills = blockWeapons.flatMap(w => w.skills);
-  const blockEffects   = extractEffectsWithQty(allBlockSkills, blockLevels);
+  // Efeitos especiais — soma por arma para não duplicar quando duas armas têm a mesma skill
+  const blockEffectsAcc = {};
+  for (const w of blockWeapons) {
+    const slotLevels = blockLevels[w.slotKey] ?? {};
+    for (const e of extractEffectsWithQty(w.skills, slotLevels)) {
+      blockEffectsAcc[e.label] = (blockEffectsAcc[e.label] ?? 0) + e.qty;
+    }
+  }
+  const blockEffects = Object.entries(blockEffectsAcc).map(([label, qty]) => ({ label, qty }));
 
-  const blockSkillCost = Object.values(blockLevels).reduce((a, v) => a + v, 0);
+  // Custo: soma de todos os níveis selecionados em todas as armas
+  const blockSkillCost = Object.values(blockLevels)
+    .flatMap(sl => Object.values(sl ?? {}))
+    .reduce((a, v) => a + v, 0);
   const energiaAtual   = character.status?.energia?.current ?? 0;
   const energyCost     = mode === 'esquivar' ? 1 : blockSkillCost;
   const podeDefender   = actionsLeft >= 1 && energiaAtual >= energyCost;
 
-  function setLevel(skillId, lv) {
-    setBlockLevels(prev => ({ ...prev, [skillId]: lv }));
+  function setLevel(slotKey, skillId, lv) {
+    setBlockLevels(prev => ({
+      ...prev,
+      [slotKey]: { ...(prev[slotKey] ?? {}), [skillId]: lv },
+    }));
   }
 
   function confirm() {
@@ -945,8 +992,8 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               <Text style={s.formulaVal}>{totalArmadura}</Text>
               <Text style={s.formulaLbl}>Armadura</Text>
             </View>
-            {blockBonuses.map(b => (
-              <React.Fragment key={b.label}>
+            {blockBonuses.map((b, i) => (
+              <React.Fragment key={`${b.slotKey}:${b.label}:${i}`}>
                 <Text style={s.formulaOp}>+</Text>
                 <View style={s.formulaPart}>
                   <Text style={s.formulaVal}>{b.val}</Text>
@@ -1011,12 +1058,12 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               <Text style={s.formulaVal}>{esportes}</Text>
               <Text style={s.formulaLbl}>Esportes</Text>
             </View>
-            {brigaEsquiva > 0 && (
+            {instintoEsquiva > 0 && (
               <>
                 <Text style={s.formulaOp}>+</Text>
                 <View style={s.formulaPart}>
-                  <Text style={s.formulaVal}>{brigaEsquiva}</Text>
-                  <Text style={s.formulaLbl}>Briga (Fighter)</Text>
+                  <Text style={s.formulaVal}>{instintoEsquiva}</Text>
+                  <Text style={s.formulaLbl}>Instinto (Fighter)</Text>
                 </View>
               </>
             )}
@@ -1034,7 +1081,7 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
       {mode === 'bloquear' && blockWeapons.length > 0 && (
         <>
           <Text style={s.subLabel}>Habilidades de Bloqueio</Text>
-          <Text style={s.hint}>Escolha o nível — cada nível custa 1 Energia</Text>
+          <Text style={s.hint}>Cada arma seleciona suas próprias habilidades — cada nível custa 1 Energia</Text>
           {blockWeapons.map(w => (
             <View key={w.slotKey}>
               <Text style={s.weaponGroupLabel}>
@@ -1042,10 +1089,10 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               </Text>
               {w.skills.map(sk => (
                 <SkillLevelPicker
-                  key={sk.id}
+                  key={`${w.slotKey}:${sk.id}`}
                   sk={sk}
-                  selLv={blockLevels[sk.id] ?? 0}
-                  onChange={setLevel}
+                  selLv={blockLevels[w.slotKey]?.[sk.id] ?? 0}
+                  onChange={(skillId, lv) => setLevel(w.slotKey, skillId, lv)}
                 />
               ))}
             </View>
@@ -1153,13 +1200,15 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const spells = getAcquiredMagicSpells(character.skillTree?.acquiredTrails);
   const [selSpell, setSelSpell] = useState(null);
   const [doubleFaixo, setDoubleAlcance] = useState(false);
+  const [doubleIntensidade, setDoubleIntensidade] = useState(false);
   const [expanded, setExpanded]   = useState(null);
   const [d20Input, setD20Input]   = useState('');
+  // { [slotKey]: { [skillId]: level } } — habilidades de arma que afetam a intensidade
+  const [weaponSkillLevels, setWeaponSkillLevels] = useState({});
 
   const spell = spells.find(sp => sp.skillId === selSpell) ?? null;
 
   // Títulos que dão +4 em testes de magia da maestria escolhida.
-  // O bônus só aplica quando a magia selecionada é da mesma maestria do título.
   const titleBonuses = [];
   if (spell) {
     for (const titleId of MAGIC_BONUS_TITLES) {
@@ -1172,21 +1221,91 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   }
   const titleBonusTotal = titleBonuses.reduce((acc, b) => acc + b.val, 0);
 
+  // Armas equipadas que têm habilidades afetando intensidade (cetros, varinhas)
+  const intensityWeapons = [];
+  for (const slotKey of HAND_SLOTS) {
+    const eq = character.equipment?.[slotKey];
+    if (!eq?.tipo) continue;
+    const cfg = MAGIC_INTENSITY_WEAPON_SKILLS[eq.tipo];
+    if (!cfg) continue;
+    const acquired = character.skillTree?.acquiredTrails?.[eq.tipo];
+    if (!acquired) continue;
+    const trail = TRAILS_ARMAS.find(t => t.id === eq.tipo);
+    if (!trail) continue;
+    const skills = [];
+    for (const sk of trail.skills) {
+      if (!cfg[sk.id]) continue;
+      const learned = acquired.skills?.[sk.id] ?? 0;
+      if (learned < 1) continue;
+      skills.push({ id: sk.id, nome: sk.nome, learned, niveis: sk.niveis ?? {}, cfg: cfg[sk.id] });
+    }
+    if (skills.length > 0) {
+      intensityWeapons.push({ slotKey, weaponNome: eq.nome || trail.nome, skills });
+    }
+  }
+
+  // Bônus FLAT de intensidade vindos de skills de arma (Nv1: soma X)
+  const weaponIntensityBonuses = [];
+  let hasDoubleAvailable = false;
+  for (const w of intensityWeapons) {
+    const slotLevels = weaponSkillLevels[w.slotKey] ?? {};
+    for (const sk of w.skills) {
+      const selLv = slotLevels[sk.id] ?? 0;
+      if (selLv < 1) continue;
+      const nv1 = sk.cfg.nv1;
+      if (nv1) {
+        const base = nv1.source === 'attr'
+          ? (attrs?.[nv1.group]?.[nv1.subAttr] ?? 0)
+          : (skills?.[nv1.statKey] ?? 0);
+        if (base > 0) weaponIntensityBonuses.push({ label: nv1.label, val: base });
+      }
+      if (selLv >= 2 && sk.cfg.nv2?.toggleDouble) hasDoubleAvailable = true;
+    }
+  }
+  const weaponIntensityBonusTotal = weaponIntensityBonuses.reduce((a, b) => a + b.val, 0);
+
+  // Bônus intrínseco de intensidade da própria magia (ENERGIA ARCANA Nv2: +5, Nv3: +10)
+  const spellIntensityBonus = spell
+    ? (MAGIC_SPELL_INTENSITY_BONUS[spell.trailId]?.[spell.skillId]?.[spell.level] ?? 0)
+    : 0;
+
+  // Custo de energia: 1 por nível selecionado de habilidade de arma
+  const weaponSkillEnergyCost = Object.values(weaponSkillLevels)
+    .flatMap(sl => Object.values(sl ?? {}))
+    .reduce((a, v) => a + v, 0);
+  const energiaAtual = character.status?.energia?.current ?? 0;
+
   const baseCast   = raciocinio + magia + titleBonusTotal + tiraBonusTotal;
   const d20Value   = Math.min(20, Math.max(0, parseInt(d20Input) || 0));
   const hasD20     = d20Input.trim() !== '' && d20Value > 0;
   const totalCast  = baseCast + d20Value;
-  const intensidade = hasD20 ? Math.floor(totalCast / 5) : null;
+  const intensityBase = hasD20 ? Math.floor(totalCast / 5) + weaponIntensityBonusTotal + spellIntensityBonus : null;
+  const intensidade   = intensityBase === null
+    ? null
+    : (hasDoubleAvailable && doubleIntensidade ? intensityBase * 2 : intensityBase);
   const custoBruto = spell ? Math.max(1, spell.custo - manaReduce) : 0;
   const custoFinal = custoBruto + (doubleFaixo ? 1 : 0);
-  const podeUsarMana = custoFinal <= manaAtual;
+  const podeUsarMana    = custoFinal <= manaAtual;
+  const podeUsarEnergia = weaponSkillEnergyCost <= energiaAtual;
+
+  function setWeaponSkillLevel(slotKey, skillId, lv) {
+    setWeaponSkillLevels(prev => ({
+      ...prev,
+      [slotKey]: { ...(prev[slotKey] ?? {}), [skillId]: lv },
+    }));
+  }
 
   function confirm() {
-    if (!spell || !podeUsarMana || actionsLeft < 1) return;
+    if (!spell || !podeUsarMana || !podeUsarEnergia || actionsLeft < 1) return;
     dispatch({ type: 'CHANGE_STATUS', statusKey: 'mana', field: 'current', delta: -custoFinal });
+    if (weaponSkillEnergyCost > 0) {
+      dispatch({ type: 'CHANGE_STATUS', statusKey: 'energia', field: 'current', delta: -weaponSkillEnergyCost });
+    }
     onConfirm();
     setSelSpell(null);
     setDoubleAlcance(false);
+    setDoubleIntensidade(false);
+    setWeaponSkillLevels({});
     setD20Input('');
   }
 
@@ -1263,6 +1382,28 @@ function MagicPanel({ actionsLeft, onConfirm }) {
             </View>
             <View style={s.castResultLine}>
               <Text style={s.castResultLabel}>Intensidade (total ÷ 5)</Text>
+              <Text style={s.castResultVal}>{Math.floor(totalCast / 5)}</Text>
+            </View>
+            {weaponIntensityBonuses.map((b, i) => (
+              <View key={`wb-${i}`} style={s.castResultLine}>
+                <Text style={s.castResultLabel}>+ {b.label}</Text>
+                <Text style={[s.castResultVal, { fontSize: 16, color: '#a6e3a1' }]}>{b.val}</Text>
+              </View>
+            ))}
+            {spellIntensityBonus > 0 && (
+              <View style={s.castResultLine}>
+                <Text style={s.castResultLabel}>+ Magia Nv {spell?.level} (bônus de intensidade)</Text>
+                <Text style={[s.castResultVal, { fontSize: 16, color: '#a6e3a1' }]}>{spellIntensityBonus}</Text>
+              </View>
+            )}
+            {hasDoubleAvailable && doubleIntensidade && (
+              <View style={s.castResultLine}>
+                <Text style={s.castResultLabel}>× 2 (Dobrar via Ascensão Nv2)</Text>
+                <Text style={[s.castResultVal, { fontSize: 16, color: '#f9e2af' }]}>×2</Text>
+              </View>
+            )}
+            <View style={[s.castResultLine, { borderTopWidth: 1, borderTopColor: '#cba6f740', paddingTop: 6, marginTop: 4 }]}>
+              <Text style={[s.castResultLabel, { fontWeight: '700', color: '#cdd6f4' }]}>Intensidade final</Text>
               <Text style={[s.castResultVal, { color: '#cba6f7' }]}>{intensidade}</Text>
             </View>
           </View>
@@ -1334,14 +1475,79 @@ function MagicPanel({ actionsLeft, onConfirm }) {
         );
       })}
 
+      {/* Habilidades de Arma que afetam Intensidade (cetros, varinhas) */}
+      {intensityWeapons.length > 0 && (
+        <>
+          <Text style={s.subLabel}>Habilidades de Arma — Intensidade</Text>
+          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
+          {intensityWeapons.map(w => (
+            <View key={w.slotKey}>
+              <Text style={s.weaponGroupLabel}>🪄 {w.weaponNome}</Text>
+              {w.skills.map(sk => {
+                const selLv = weaponSkillLevels[w.slotKey]?.[sk.id] ?? 0;
+                return (
+                  <View key={sk.id} style={[s.skillCard, selLv > 0 && s.skillCardActive]}>
+                    <View style={s.skillCardHeader}>
+                      <Text style={[s.skillName, selLv > 0 && s.skillNameActive]}>{sk.nome}</Text>
+                      <View style={s.lvlPicker}>
+                        <TouchableOpacity
+                          style={[s.lvlBtn, selLv === 0 && s.lvlBtnOff]}
+                          onPress={() => setWeaponSkillLevel(w.slotKey, sk.id, 0)}
+                        >
+                          <Text style={[s.lvlBtnText, selLv === 0 && s.lvlBtnTextOff]}>—</Text>
+                        </TouchableOpacity>
+                        {Array.from({ length: sk.learned }, (_, i) => i + 1).map(lv => (
+                          <TouchableOpacity
+                            key={lv}
+                            style={[s.lvlBtn, selLv >= lv && s.lvlBtnActive]}
+                            onPress={() => setWeaponSkillLevel(w.slotKey, sk.id, lv)}
+                          >
+                            <Text style={[s.lvlBtnText, selLv >= lv && s.lvlBtnTextActive]}>{lv}</Text>
+                          </TouchableOpacity>
+                        ))}
+                        {selLv > 0 && <Text style={s.lvlCost}>−{selLv}⚡</Text>}
+                      </View>
+                    </View>
+                    {selLv > 0 && Array.from({ length: selLv }, (_, i) => i + 1).map(lv => {
+                      const desc = sk.niveis[String(lv)];
+                      const descText = typeof desc === 'string' ? desc : '';
+                      if (!descText) return null;
+                      return (
+                        <View key={lv} style={s.lvlDesc}>
+                          <Text style={s.lvlDescBadge}>Nv {lv}</Text>
+                          <Text style={s.lvlDescText}>{descText}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+        </>
+      )}
+
+      {/* Toggle Dobrar Intensidade (apenas se Ascensão Nv ≥ 2 ativa) */}
+      {hasDoubleAvailable && (
+        <TouchableOpacity
+          style={[s.titleToggleBtn, doubleIntensidade && s.titleToggleBtnOn]}
+          onPress={() => setDoubleIntensidade(v => !v)}
+        >
+          <Text style={[s.titleToggleText, doubleIntensidade && s.titleToggleTextOn]}>
+            ✨ Dobrar Intensidade (Ascensão Nv2) — aplica depois de todos os bônus
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {spell && (
         <TouchableOpacity
-          style={[s.confirmBtn, (!podeUsarMana || actionsLeft < 1) && s.confirmBtnDisabled]}
+          style={[s.confirmBtn, (!podeUsarMana || !podeUsarEnergia || actionsLeft < 1) && s.confirmBtnDisabled]}
           onPress={confirm}
-          disabled={!podeUsarMana || actionsLeft < 1}
+          disabled={!podeUsarMana || !podeUsarEnergia || actionsLeft < 1}
         >
           <Text style={s.confirmBtnText}>
             Conjurar {spell.skillNome}  −1 Ação  −{custoFinal} Mana
+            {weaponSkillEnergyCost > 0 ? `  −${weaponSkillEnergyCost} Energia` : ''}
           </Text>
         </TouchableOpacity>
       )}
@@ -1603,6 +1809,11 @@ const s = StyleSheet.create({
   effectTagText:   { fontSize: 12, fontWeight: '700' },
   effectTagSkill:      { borderColor: '#f9e2af' },
   effectTagTextSkill:  { color: '#f9e2af', fontSize: 12, fontWeight: '700' },
+
+  weaponGroupLabel: {
+    color: '#cba6f7', fontSize: 12, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 1, marginTop: 8, marginBottom: 4,
+  },
 
   // Input do d20 (conjuração)
   d20Row: {
