@@ -17,6 +17,7 @@ import InventoryScreen     from './src/screens/InventoryScreen';
 import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
 import CustomizationModal  from './src/components/CustomizationModal';
 import JournalModal        from './src/components/JournalModal';
+import AdventuresScreen    from './src/screens/AdventuresScreen';
 import SheetSelectScreen   from './src/screens/SheetSelectScreen';
 import AuthScreen          from './src/screens/AuthScreen';
 import { loadSheetsList }  from './src/utils/sheetsManager';
@@ -39,8 +40,9 @@ function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
   const [sheetsLoading, setSheetsLoading] = useState(true);
   const [selectedSheet, setSelectedSheet] = useState(null);
-  const [showCustom, setShowCustom]       = useState(false);
-  const [showJournal, setShowJournal]     = useState(false);
+  const [showCustom, setShowCustom]         = useState(false);
+  const [showJournal, setShowJournal]       = useState(false);
+  const [showAdventures, setShowAdventures] = useState(false);
   const [isFirstSetup, setIsFirstSetup]   = useState(false);
   const [syncing, setSyncing]             = useState(false);
 
@@ -180,6 +182,13 @@ function AppContent() {
             headerRight: () => (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8 }}>
                 <TouchableOpacity
+                  onPress={() => setShowAdventures(true)}
+                  style={{ padding: 6 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={{ fontSize: 20 }}>{'\u{1F5FA}\uFE0F'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   onPress={() => setShowJournal(true)}
                   style={{ padding: 6 }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -212,6 +221,13 @@ function AppContent() {
           <Tab.Screen name="Turno"       component={TurnAssistantScreen} options={{ title: 'Assistente de Turno' }} />
         </Tab.Navigator>
 
+        <AdventuresScreen
+          visible={showAdventures}
+          onClose={() => setShowAdventures(false)}
+          userId={user.id}
+          sheetId={selectedSheet.id}
+          sheetName={selectedSheet.name}
+        />
         <JournalModal visible={showJournal} onClose={() => setShowJournal(false)} />
         <CustomizationModal
           visible={showCustom}
