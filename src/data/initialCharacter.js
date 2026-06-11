@@ -26,7 +26,7 @@ const emptyArmorSlot = () => ({
   durabilidade: 10, durabilidadeMax: 10, nivel: 1, tiras: [],
 });
 const basicArmorSlot = (nome) => ({
-  nome, armadura: 5, resMagica: 0, reputacao: 0, efeitos: '',
+  nome, armadura: 1, resMagica: 0, reputacao: 0, efeitos: '',
   durabilidade: 10, durabilidadeMax: 10, nivel: 1, tiras: [],
 });
 const emptyHandSlot = () => ({ tipo: '', tipo2: '', nome: '', dano: '', efeitos: '', nivel: 1, tiras: [], durabilidade: 10, durabilidadeMax: 10 });
