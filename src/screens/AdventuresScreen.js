@@ -24,7 +24,7 @@ export default function AdventuresScreen({ visible, onClose, userId, sheetId, sh
     const { data, error } = await supabase
       .from('adventures')
       .select(`
-        id, title, status, default_time_skip_days, total_time_skip_days,
+        id, title, status, master_id, default_time_skip_days, total_time_skip_days,
         updated_at, campaign_id,
         campaigns ( name ),
         adventure_participants!inner ( character_sheet_id, last_read_post_id )

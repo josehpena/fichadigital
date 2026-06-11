@@ -11,11 +11,15 @@ const ROLE_LABELS = {
 };
 
 export default function AdventureThreadScreen({ adventure, userId, sheetId, sheetName, onClose }) {
+  const isMaster = adventure.master_id === userId;
+
   const [posts, setPosts]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [body, setBody]           = useState('');
   const [sending, setSending]     = useState(false);
   const [error, setError]         = useState(null);
+  const [asMaster, setAsMaster]   = useState(false);
+  const [skipDays, setSkipDays]   = useState(String(adventure.default_time_skip_days ?? 0));
   const flatRef                   = useRef(null);
 
   const markRead = useCallback(async (lastPostId) => {
@@ -79,13 +83,14 @@ export default function AdventureThreadScreen({ adventure, userId, sheetId, shee
     if (!body.trim() || sending) return;
     setSending(true);
     setError(null);
+    const days = asMaster ? Math.max(0, parseInt(skipDays) || 0) : 0;
     const { error: err } = await supabase.from('adventure_posts').insert({
       adventure_id: adventure.id,
       author_user_id: userId,
-      author_character_sheet_id: sheetId,
-      author_role: 'player',
+      author_character_sheet_id: asMaster ? null : sheetId,
+      author_role: asMaster ? 'master' : 'player',
       body: body.trim(),
-      time_skip_days: 0,
+      time_skip_days: days,
     });
     if (err) {
       setError('Erro ao enviar. Tente novamente.');
@@ -102,7 +107,9 @@ export default function AdventureThreadScreen({ adventure, userId, sheetId, shee
 
   function authorLabel(post) {
     if (post.author_role === 'master') return ROLE_LABELS.master;
-    return `🧙 ${sheetName}`;
+    // Se o post é do próprio usuário, usa o nome da ficha local; senão mostra genérico
+    if (post.author_user_id === userId) return `🧙 ${sheetName}`;
+    return `🧙 Jogador`;
   }
 
   const isMyPost = (post) => post.author_user_id === userId;
@@ -172,10 +179,61 @@ export default function AdventureThreadScreen({ adventure, userId, sheetId, shee
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={90}
         >
+          {/* Toggle mestre (só aparece se o usuário é o mestre desta aventura) */}
+          {isMaster && (
+            <View style={styles.modeBar}>
+              <TouchableOpacity
+                onPress={() => setAsMaster(false)}
+                style={[styles.modeBtn, !asMaster && styles.modeBtnActive]}
+              >
+                <Text style={[styles.modeBtnText, !asMaster && styles.modeBtnTextActive]}>
+                  🧙 {sheetName}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setAsMaster(true)}
+                style={[styles.modeBtn, asMaster && styles.modeBtnMasterActive]}
+              >
+                <Text style={[styles.modeBtnText, asMaster && styles.modeBtnMasterTextActive]}>
+                  ⚔️ Mestre
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Campo de dias (só visível no modo mestre) */}
+          {asMaster && (
+            <View style={styles.skipRow}>
+              <Text style={styles.skipLabel}>Avançar dias:</Text>
+              <TouchableOpacity
+                onPress={() => setSkipDays(String(Math.max(0, (parseInt(skipDays) || 0) - 1)))}
+                style={styles.skipStepper}
+              >
+                <Text style={styles.skipStepperText}>−</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={styles.skipInput}
+                keyboardType="number-pad"
+                value={skipDays}
+                onChangeText={(v) => setSkipDays(v.replace(/[^0-9]/g, ''))}
+                maxLength={3}
+              />
+              <TouchableOpacity
+                onPress={() => setSkipDays(String((parseInt(skipDays) || 0) + 1))}
+                style={styles.skipStepper}
+              >
+                <Text style={styles.skipStepperText}>+</Text>
+              </TouchableOpacity>
+              <Text style={styles.skipHint}>
+                (padrão: {adventure.default_time_skip_days})
+              </Text>
+            </View>
+          )}
+
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
-              placeholder={`Responder como ${sheetName}…`}
+              placeholder={asMaster ? 'Narrar como Mestre…' : `Responder como ${sheetName}…`}
               placeholderTextColor="#6c7086"
               value={body}
               onChangeText={setBody}
@@ -185,7 +243,7 @@ export default function AdventureThreadScreen({ adventure, userId, sheetId, shee
             <TouchableOpacity
               onPress={handleSend}
               disabled={!body.trim() || sending}
-              style={[styles.sendBtn, (!body.trim() || sending) && styles.sendBtnDisabled]}
+              style={[styles.sendBtn, asMaster ? styles.sendBtnMaster : null, (!body.trim() || sending) && styles.sendBtnDisabled]}
             >
               {sending
                 ? <ActivityIndicator color="#1e1e2e" size="small" />
@@ -343,10 +401,97 @@ const styles = StyleSheet.create({
   sendBtnDisabled: {
     backgroundColor: '#2e2e4e',
   },
+  sendBtnMaster: {
+    backgroundColor: '#cba6f7',
+  },
   sendIcon: {
     color: '#1e1e2e',
     fontSize: 18,
     fontWeight: '900',
+  },
+  modeBar: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
+    backgroundColor: '#1e1e2e',
+    borderTopWidth: 1,
+    borderTopColor: '#2e2e4e',
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: '#181825',
+    borderWidth: 1,
+    borderColor: '#2e2e4e',
+  },
+  modeBtnActive: {
+    borderColor: '#89b4fa',
+    backgroundColor: '#89b4fa22',
+  },
+  modeBtnMasterActive: {
+    borderColor: '#cba6f7',
+    backgroundColor: '#cba6f722',
+  },
+  modeBtnText: {
+    color: '#6c7086',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modeBtnTextActive: {
+    color: '#89b4fa',
+  },
+  modeBtnMasterTextActive: {
+    color: '#cba6f7',
+  },
+  skipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1e1e2e',
+  },
+  skipLabel: {
+    color: '#cba6f7',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  skipStepper: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#181825',
+    borderWidth: 1,
+    borderColor: '#45475a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipStepperText: {
+    color: '#cdd6f4',
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  skipInput: {
+    width: 52,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#181825',
+    borderWidth: 1,
+    borderColor: '#45475a',
+    color: '#cba6f7',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  skipHint: {
+    color: '#6c7086',
+    fontSize: 11,
+    flex: 1,
   },
   errorText: {
     color: '#f38ba8',
