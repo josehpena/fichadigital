@@ -1125,6 +1125,32 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const castBonus = CAST_BONUS_TITLES.some(id => acquiredTitles.includes(id)) ? 4 : 0;
   const manaReduce = MANA_REDUCE_TITLES.some(id => acquiredTitles.includes(id)) ? 1 : 0;
 
+  // Coleta tiras de couro de todos os equipamentos (mão + armaduras + acessórios)
+  const allTiras = [];
+  for (const slotKey of HAND_SLOTS) {
+    const slot = character.equipment?.[slotKey];
+    if (slot) for (const t of (slot.tiras ?? [])) allTiras.push(t);
+  }
+  for (const slotKey of ARMOR_SLOTS) {
+    const slot = character.equipment?.[slotKey];
+    if (slot && slot.durabilidade > 0) for (const t of (slot.tiras ?? [])) allTiras.push(t);
+  }
+  for (const acc of (character.accessories ?? [])) {
+    for (const t of (acc.tiras ?? [])) allTiras.push(t);
+  }
+
+  // Tiras relevantes para magia: Raciocínio (atributo) e Magia (perícia)
+  const tiraBonuses = [];
+  for (const t of allTiras) {
+    if (!t.valor) continue;
+    if (t.tipo === 'atributo' && t.subAttr === 'raciocinio') {
+      tiraBonuses.push({ label: `${ATTRIBUTE_LABELS.raciocinio} (tira)`, val: t.valor });
+    } else if (t.tipo === 'pericia' && t.skill === 'magia') {
+      tiraBonuses.push({ label: `${SKILL_LABELS.magia} (tira)`, val: t.valor });
+    }
+  }
+  const tiraBonusTotal = tiraBonuses.reduce((acc, b) => acc + b.val, 0);
+
   const spells = getAcquiredMagicSpells(character.skillTree?.acquiredTrails);
   const [selSpell, setSelSpell] = useState(null);
   const [doubleFaixo, setDoubleAlcance] = useState(false);
@@ -1175,13 +1201,22 @@ function MagicPanel({ actionsLeft, onConfirm }) {
               </View>
             </>
           )}
+          {tiraBonuses.map((b, i) => (
+            <React.Fragment key={`${b.label}-${i}`}>
+              <Text style={s.formulaOp}>+</Text>
+              <View style={s.formulaPart}>
+                <Text style={s.formulaVal}>{b.val}</Text>
+                <Text style={s.formulaLbl}>{b.label}</Text>
+              </View>
+            </React.Fragment>
+          ))}
           <Text style={s.formulaOp}>+</Text>
           <View style={s.formulaPart}>
             <Text style={s.formulaVal}>d20</Text>
             <Text style={s.formulaLbl}>Dado</Text>
           </View>
         </View>
-        <Text style={s.formulaNote}>Base: {raciocinio + magia + castBonus} + d20 vs dificuldade</Text>
+        <Text style={s.formulaNote}>Base: {raciocinio + magia + castBonus + tiraBonusTotal} + d20 vs dificuldade</Text>
       </View>
 
       {/* Lista de magias */}
