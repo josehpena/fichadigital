@@ -16,6 +16,7 @@ import TitlesScreen        from './src/screens/TitlesScreen';
 import InventoryScreen     from './src/screens/InventoryScreen';
 import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
 import CustomizationModal  from './src/components/CustomizationModal';
+import RaceSelectionModal  from './src/components/RaceSelectionModal';
 import JournalModal        from './src/components/JournalModal';
 import AdventuresScreen    from './src/screens/AdventuresScreen';
 import SheetSelectScreen   from './src/screens/SheetSelectScreen';
@@ -43,6 +44,7 @@ function AppContent() {
   const [showCustom, setShowCustom]         = useState(false);
   const [showJournal, setShowJournal]       = useState(false);
   const [showAdventures, setShowAdventures] = useState(false);
+  const [showRaceSelect, setShowRaceSelect] = useState(false);
   const [isFirstSetup, setIsFirstSetup]   = useState(false);
   const [syncing, setSyncing]             = useState(false);
 
@@ -84,6 +86,11 @@ function AppContent() {
   function handleNewSheet(sheet) {
     setIsFirstSetup(true);
     setSelectedSheet(sheet);
+    setShowRaceSelect(true);
+  }
+
+  function handleCloseRaceSelect() {
+    setShowRaceSelect(false);
     setShowCustom(true);
   }
 
@@ -229,6 +236,10 @@ function AppContent() {
           sheetName={selectedSheet.name}
         />
         <JournalModal visible={showJournal} onClose={() => setShowJournal(false)} />
+        <RaceSelectionModal
+          visible={showRaceSelect}
+          onClose={handleCloseRaceSelect}
+        />
         <CustomizationModal
           visible={showCustom}
           onClose={handleCloseCustom}

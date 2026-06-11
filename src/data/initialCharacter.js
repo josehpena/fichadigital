@@ -37,6 +37,10 @@ export const INITIAL_CHARACTER = {
   name: 'Personagem',
   racialTraits: '',
 
+  // Raça escolhida na criação da ficha. null até o jogador escolher.
+  // race: { raceId, subraceId, skillBoostSkill, startingMagicTrail }
+  race: null,
+
   status: {
     vida:           { current: initMax.vida,           max: initMax.vida           },
     energia:        { current: initMax.energia,        max: initMax.energia        },

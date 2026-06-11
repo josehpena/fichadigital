@@ -10,8 +10,9 @@ import {
   HAND_SLOTS,
   xpCostForRange,
 } from '../data/initialCharacter';
-import { findTrail, findCategoryTrails } from '../data/trailsData';
+import { findTrail, findCategoryTrails, TRAILS_MAGIAS } from '../data/trailsData';
 import { findTitleById } from '../data/titlesData';
+import { SUBRACE_BY_ID } from '../data/racesData';
 
 // Descobre a categoria de uma perícia
 function getSkillCategory(skill) {
@@ -69,6 +70,10 @@ function computeAllStatusBonuses(char) {
   const equipTiras = computeEquipTirasBonuses(char.equipment ?? {}, char.accessories ?? []);
   const merged = { ...(char.titles?.statusBonuses ?? {}) };
   for (const [k, v] of Object.entries(equipTiras)) merged[k] = (merged[k] || 0) + v;
+  // Bônus de raça (Elfos da Lua: +5 mana, etc.)
+  for (const [k, v] of Object.entries(char.race?.statusBonuses ?? {})) {
+    merged[k] = (merged[k] || 0) + v;
+  }
   return totalStatusBonuses(
     merged,
     char.narrativeEffects ?? [],
@@ -195,6 +200,66 @@ function reducer(state, action) {
     case 'SET_RACIAL_TRAITS':
       return { ...state, racialTraits: action.value };
 
+    // { raceId, subraceId, skillBoostSkill?, startingMagicTrail?, startingMagicSkills? }
+    // Aplica raça à ficha: bônus de status, perícia escolhida (até 8) e magias iniciais.
+    case 'SET_RACE': {
+      const sub = SUBRACE_BY_ID[action.subraceId];
+      if (!sub) return state;
+
+      // 1) Aplica status bonuses da subraça (somando aos existentes)
+      const raceStatusBonuses = {};
+      for (const b of (sub.statusBonuses ?? [])) {
+        raceStatusBonuses[b.status] = (raceStatusBonuses[b.status] || 0) + b.delta;
+      }
+
+      const newRace = {
+        raceId: action.raceId,
+        subraceId: action.subraceId,
+        skillBoostSkill: action.skillBoostSkill ?? null,
+        startingMagicTrail: action.startingMagicTrail ?? null,
+        statusBonuses: raceStatusBonuses,
+      };
+
+      let newState = { ...state, race: newRace };
+
+      // 2) Magias iniciais (Wanderstein): adiciona trilha + skills escolhidas ao skillTree
+      if (sub.startingMagic && action.startingMagicTrail && action.startingMagicSkills?.length) {
+        const trail = TRAILS_MAGIAS.find(t => t.id === action.startingMagicTrail);
+        if (trail) {
+          const existing = state.skillTree?.acquiredTrails?.[trail.id];
+          const newSkills = { ...(existing?.skills ?? {}) };
+          for (const skillId of action.startingMagicSkills) {
+            newSkills[skillId] = Math.max(newSkills[skillId] ?? 0, sub.startingMagic.nivel);
+          }
+          newState = {
+            ...newState,
+            skillTree: {
+              ...newState.skillTree,
+              acquiredTrails: {
+                ...(newState.skillTree?.acquiredTrails ?? {}),
+                [trail.id]: { cost: existing?.cost ?? 0, skills: newSkills },
+              },
+              trailCount: (newState.skillTree?.trailCount ?? 0) + (existing ? 0 : 1),
+            },
+          };
+        }
+      }
+
+      // 3) Recalcula tetos de status considerando os novos bônus da raça
+      const newStatus = applyComputedMaxes(
+        newState.status, newState.attributes, computeAllStatusBonuses(newState)
+      );
+      // Adiciona o delta ao current dos status com bonus positivo
+      let finalStatus = newStatus;
+      for (const [statusKey, delta] of Object.entries(raceStatusBonuses)) {
+        if (delta > 0 && COMPUTED_STATUS_KEYS.includes(statusKey)) {
+          const s = finalStatus[statusKey];
+          finalStatus = { ...finalStatus, [statusKey]: { ...s, current: Math.min(s.current + delta, s.max) } };
+        }
+      }
+      return { ...newState, status: finalStatus };
+    }
+
     // { statusKey, field: 'current'|'max', delta }
     case 'CHANGE_STATUS': {
       // Não deixa alterar o max dos status calculados
@@ -246,7 +311,8 @@ function reducer(state, action) {
     // { skill, delta }
     case 'CHANGE_SKILL': {
       const curVal = state.skills[action.skill] || 0;
-      const newVal = clamp(curVal + action.delta, 0, 5);
+      const skillMax = state.race?.skillBoostSkill === action.skill ? 8 : 5;
+      const newVal = clamp(curVal + action.delta, 0, skillMax);
       const newSkills = { ...state.skills, [action.skill]: newVal };
 
       // Se algum título escala com esta perícia, recalcula tetos de status
