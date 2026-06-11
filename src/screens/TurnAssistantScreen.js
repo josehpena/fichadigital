@@ -5,7 +5,7 @@ import {
 import { useCharacter } from '../context/CharacterContext';
 import { HAND_SLOTS, ARMOR_SLOTS, EQUIP_LABELS, computeDefenseTotals, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
-import { TITLE_BY_ID } from '../data/titlesData';
+import { TITLE_BY_ID, MAGIC_BONUS_TITLES, getTitleMagicMaestria } from '../data/titlesData';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -217,8 +217,7 @@ const REACTION_TITLES = {
   executor:          'Ao abater um alvo ou zerar sua vida: ganha 1 ação extra este turno',
 };
 
-// Títulos que modificam conjuração
-const CAST_BONUS_TITLES  = ['aprendiz_de_conjurador', 'conjurador_tatico', 'seguidor_da_magia'];
+// Títulos que reduzem custo de mana das magias (efeito global, sem maestria)
 const MANA_REDUCE_TITLES = ['feiticeiro'];
 
 // Habilidades que adicionam stats ao BLOQUEIO
@@ -1122,7 +1121,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const manaAtual  = character.status?.mana?.current ?? 0;
 
   const acquiredTitles = character.titles?.acquired ?? [];
-  const castBonus = CAST_BONUS_TITLES.some(id => acquiredTitles.includes(id)) ? 4 : 0;
+  const bindings       = character.titles?.bindings ?? {};
   const manaReduce = MANA_REDUCE_TITLES.some(id => acquiredTitles.includes(id)) ? 1 : 0;
 
   // Coleta tiras de couro de todos os equipamentos (mão + armaduras + acessórios)
@@ -1157,13 +1156,27 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const [expanded, setExpanded]   = useState(null);
   const [d20Input, setD20Input]   = useState('');
 
-  const baseCast   = raciocinio + magia + castBonus + tiraBonusTotal;
+  const spell = spells.find(sp => sp.skillId === selSpell) ?? null;
+
+  // Títulos que dão +4 em testes de magia da maestria escolhida.
+  // O bônus só aplica quando a magia selecionada é da mesma maestria do título.
+  const titleBonuses = [];
+  if (spell) {
+    for (const titleId of MAGIC_BONUS_TITLES) {
+      if (!acquiredTitles.includes(titleId)) continue;
+      const titleMaestria = getTitleMagicMaestria(titleId, bindings);
+      if (titleMaestria && titleMaestria === spell.trailId) {
+        titleBonuses.push({ titleId, nome: TITLE_BY_ID[titleId]?.nome ?? titleId, val: 4 });
+      }
+    }
+  }
+  const titleBonusTotal = titleBonuses.reduce((acc, b) => acc + b.val, 0);
+
+  const baseCast   = raciocinio + magia + titleBonusTotal + tiraBonusTotal;
   const d20Value   = Math.min(20, Math.max(0, parseInt(d20Input) || 0));
   const hasD20     = d20Input.trim() !== '' && d20Value > 0;
   const totalCast  = baseCast + d20Value;
   const intensidade = hasD20 ? Math.floor(totalCast / 5) : null;
-
-  const spell = spells.find(sp => sp.skillId === selSpell) ?? null;
   const custoBruto = spell ? Math.max(1, spell.custo - manaReduce) : 0;
   const custoFinal = custoBruto + (doubleFaixo ? 1 : 0);
   const podeUsarMana = custoFinal <= manaAtual;
@@ -1200,15 +1213,15 @@ function MagicPanel({ actionsLeft, onConfirm }) {
             <Text style={s.formulaVal}>{magia}</Text>
             <Text style={s.formulaLbl}>Magia</Text>
           </View>
-          {castBonus > 0 && (
-            <>
+          {titleBonuses.map((b) => (
+            <React.Fragment key={b.titleId}>
               <Text style={s.formulaOp}>+</Text>
               <View style={s.formulaPart}>
-                <Text style={[s.formulaVal, { color: '#a6e3a1' }]}>{castBonus}</Text>
-                <Text style={s.formulaLbl}>Bônus Título</Text>
+                <Text style={[s.formulaVal, { color: '#a6e3a1' }]}>{b.val}</Text>
+                <Text style={s.formulaLbl}>{b.nome}</Text>
               </View>
-            </>
-          )}
+            </React.Fragment>
+          ))}
           {tiraBonuses.map((b, i) => (
             <React.Fragment key={`${b.label}-${i}`}>
               <Text style={s.formulaOp}>+</Text>
@@ -1224,7 +1237,10 @@ function MagicPanel({ actionsLeft, onConfirm }) {
             <Text style={s.formulaLbl}>Dado</Text>
           </View>
         </View>
-        <Text style={s.formulaNote}>Base: {baseCast} + d20 vs dificuldade</Text>
+        <Text style={s.formulaNote}>
+          Base: {baseCast} + d20 vs dificuldade
+          {!spell ? '  ·  Selecione uma magia para aplicar bônus de título' : ''}
+        </Text>
 
         {/* Input do d20 + total + intensidade */}
         <View style={s.d20Row}>
