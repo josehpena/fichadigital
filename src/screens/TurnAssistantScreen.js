@@ -255,14 +255,15 @@ function getAllBlockSkills(equipment, acquiredTrails) {
 
 function getBlockBonuses(blockWeapons, allLevels, characterSkills) {
   const bonuses = [];
-  for (const { skills } of blockWeapons) {
+  for (const { slotKey, weaponNome, skills } of blockWeapons) {
+    const slotLevels = allLevels[slotKey] ?? {};
     for (const sk of skills) {
       const mod = WEAPON_SKILL_BLOCK_MODS[sk.id];
       if (!mod || !mod.unconditional) continue;
-      const selLv = allLevels[sk.id] ?? 0;
+      const selLv = slotLevels[sk.id] ?? 0;
       if (selLv < mod.minLevel) continue;
       const val = (characterSkills[mod.statKey] ?? 0) * mod.multiplier(selLv);
-      bonuses.push({ label: mod.statLabel, val });
+      bonuses.push({ label: mod.statLabel, val, slotKey, weaponNome });
     }
   }
   return bonuses;
@@ -806,7 +807,8 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   const reflexo  = skills?.reflexo  ?? 0;
   const esportes = skills?.esportes ?? 0;
   const [mode, setMode]       = useState('bloquear');
-  const [blockLevels, setBlockLevels] = useState({}); // { skillId: level }
+  // Estado por arma: { [slotKey]: { [skillId]: level } } — cada arma seleciona suas próprias habilidades
+  const [blockLevels, setBlockLevels] = useState({});
 
   const { totalArmadura } = computeDefenseTotals(character.equipment, character.accessories);
 
@@ -827,15 +829,19 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
     for (const t of (acc.tiras ?? [])) allTiras.push(t);
   }
 
-  // Bônus numéricos incondicionais ao bloqueio (base das skills)
+  // Bônus numéricos incondicionais ao bloqueio (uma entrada por arma ativa)
   const blockBonuses    = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
   const blockBonusTotal = blockBonuses.reduce((a, b) => a + b.val, 0);
 
+  // Maior nível ativo de cada skill (entre todas as armas) — usado para tira/efeitos condicionais
+  const maxLevelFor = (skillId) =>
+    Math.max(0, ...Object.values(blockLevels).map(sl => sl?.[skillId] ?? 0));
+
   // Tiras de equipamento aplicadas ao bloqueio (para cada skill ativa)
   const blockTiraBonuses = [];
-  const fatiadorLv   = blockLevels.fatiador   ?? 0;
-  const bloqueadorLv = blockLevels.bloqueador ?? 0;
-  const confrontoLv  = blockLevels.confronto  ?? 0;
+  const fatiadorLv   = maxLevelFor('fatiador');
+  const bloqueadorLv = maxLevelFor('bloqueador');
+  const confrontoLv  = maxLevelFor('confronto');
 
   if (fatiadorLv >= 1) {
     const tiraBrancas = allTiras
@@ -905,17 +911,29 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   const blockTiraTotal = blockTiraBonuses.reduce((a, b) => a + b.val, 0);
   const blockTotal     = totalArmadura + blockBonusTotal + blockTiraTotal + defensorBonus + encouracadoBonus;
 
-  // Efeitos especiais
-  const allBlockSkills = blockWeapons.flatMap(w => w.skills);
-  const blockEffects   = extractEffectsWithQty(allBlockSkills, blockLevels);
+  // Efeitos especiais — soma por arma para não duplicar quando duas armas têm a mesma skill
+  const blockEffectsAcc = {};
+  for (const w of blockWeapons) {
+    const slotLevels = blockLevels[w.slotKey] ?? {};
+    for (const e of extractEffectsWithQty(w.skills, slotLevels)) {
+      blockEffectsAcc[e.label] = (blockEffectsAcc[e.label] ?? 0) + e.qty;
+    }
+  }
+  const blockEffects = Object.entries(blockEffectsAcc).map(([label, qty]) => ({ label, qty }));
 
-  const blockSkillCost = Object.values(blockLevels).reduce((a, v) => a + v, 0);
+  // Custo: soma de todos os níveis selecionados em todas as armas
+  const blockSkillCost = Object.values(blockLevels)
+    .flatMap(sl => Object.values(sl ?? {}))
+    .reduce((a, v) => a + v, 0);
   const energiaAtual   = character.status?.energia?.current ?? 0;
   const energyCost     = mode === 'esquivar' ? 1 : blockSkillCost;
   const podeDefender   = actionsLeft >= 1 && energiaAtual >= energyCost;
 
-  function setLevel(skillId, lv) {
-    setBlockLevels(prev => ({ ...prev, [skillId]: lv }));
+  function setLevel(slotKey, skillId, lv) {
+    setBlockLevels(prev => ({
+      ...prev,
+      [slotKey]: { ...(prev[slotKey] ?? {}), [skillId]: lv },
+    }));
   }
 
   function confirm() {
@@ -945,8 +963,8 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               <Text style={s.formulaVal}>{totalArmadura}</Text>
               <Text style={s.formulaLbl}>Armadura</Text>
             </View>
-            {blockBonuses.map(b => (
-              <React.Fragment key={b.label}>
+            {blockBonuses.map((b, i) => (
+              <React.Fragment key={`${b.slotKey}:${b.label}:${i}`}>
                 <Text style={s.formulaOp}>+</Text>
                 <View style={s.formulaPart}>
                   <Text style={s.formulaVal}>{b.val}</Text>
@@ -1034,7 +1052,7 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
       {mode === 'bloquear' && blockWeapons.length > 0 && (
         <>
           <Text style={s.subLabel}>Habilidades de Bloqueio</Text>
-          <Text style={s.hint}>Escolha o nível — cada nível custa 1 Energia</Text>
+          <Text style={s.hint}>Cada arma seleciona suas próprias habilidades — cada nível custa 1 Energia</Text>
           {blockWeapons.map(w => (
             <View key={w.slotKey}>
               <Text style={s.weaponGroupLabel}>
@@ -1042,10 +1060,10 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
               </Text>
               {w.skills.map(sk => (
                 <SkillLevelPicker
-                  key={sk.id}
+                  key={`${w.slotKey}:${sk.id}`}
                   sk={sk}
-                  selLv={blockLevels[sk.id] ?? 0}
-                  onChange={setLevel}
+                  selLv={blockLevels[w.slotKey]?.[sk.id] ?? 0}
+                  onChange={(skillId, lv) => setLevel(w.slotKey, skillId, lv)}
                 />
               ))}
             </View>
