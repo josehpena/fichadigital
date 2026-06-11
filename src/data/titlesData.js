@@ -44,28 +44,28 @@ const CATEGORIAS_RAW = [
             requisitos: ['3 magias level 2 da Maestria Profana', 'Conjurador Tático'] },
           { id: 'elemental', nome: 'Elemental', ordem: 3,
             beneficios: ['4 de bônus em testes de magia de ELEMENTAL', 'Ativo: Essa habilidade pode ser ativada 1 vez ao dia. Suas próximas 3 magias tem custo ZERO de mana'],
-            requisitos: ['2 magias de level 3', 'Feiticeiro'] },
+            requisitos: ['3 magias de level 3', 'Feiticeiro'] },
           { id: 'iluminado', nome: 'Iluminado', ordem: 3,
             beneficios: ['4 de bônus em testes de magia DIVINA', 'Ativo: Ao meditar por pelo menos 1 hora, o conjurador recupera sua mana igual a sua clarividência'],
-            requisitos: ['2 magias de level 3', 'Clérigo'] },
+            requisitos: ['3 magias de level 3', 'Clérigo'] },
           { id: 'manipulador', nome: 'Manipulador', ordem: 3,
             beneficios: ['4 de bônus em testes de magia MENTAL', 'Ativo: Ao meditar por pelo menos 1 hora, o conjurador recupera sua mana igual a sua clarividência'],
-            requisitos: ['2 magias de level 3', 'Ilusionista'] },
+            requisitos: ['3 magias de level 3', 'Ilusionista'] },
           { id: 'arquimago', nome: 'Arquimago', ordem: 3,
             beneficios: ['4 de bônus em testes de magia ARCANA', 'Ativo: Essa habilidade pode ser ativada 1 vez ao dia. Suas próximas 3 magias tem custo ZERO de mana'],
-            requisitos: ['2 magias de level 3', 'Mago'] },
+            requisitos: ['3 magias de level 3', 'Mago'] },
           { id: 'lich', nome: 'Lich', ordem: 3,
             beneficios: ['4 de bônus em testes de magia PROFANA', 'Ativo: Suas magias podem possuir até 2 de raio adicional ao ser conjurada'],
-            requisitos: ['2 magias de level 3', 'Necromante'] },
+            requisitos: ['3 magias de level 3', 'Necromante'] },
           { id: 'disruptor', nome: 'Disruptor', ordem: 3,
             beneficios: ['4 de bônus em testes de magia de DISTORÇÃO', 'Ativo: Suas magias podem possuir até 2 de raio adicional ao ser conjurada'],
-            requisitos: ['2 magias de level 3', 'Transmutador'] },
+            requisitos: ['3 magias de level 3', 'Transmutador'] },
           { id: 'atemporal', nome: 'Atemporal', ordem: 3,
             beneficios: ['4 de bônus em testes de magia TEMPORAL', 'Ativo: Se um teste de conjuração tiver resultado entre 2 e 9, troque esse resultado por 10'],
-            requisitos: ['2 magias de level 3', 'Moldador do Tempo'] },
+            requisitos: ['3 magias de level 3', 'Moldador do Tempo'] },
           { id: 'espectro', nome: 'Espectro', ordem: 3,
             beneficios: ['4 de bônus em testes de magia ESPECTRAL', 'Ativo: Se um teste de conjuração tiver resultado entre 2 e 9, troque esse resultado por 10'],
-            requisitos: ['2 magias de level 3', 'Bruxo'] },
+            requisitos: ['3 magias de level 3', 'Bruxo'] },
         ],
       },
       {
@@ -222,9 +222,37 @@ export const REQUISITO_HABILIDADES = {
   aprendiz_de_conjurador: { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
   seguidor_da_magia:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
   conjurador_tatico:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
+  // MILITAR / MÁGICA – Nível 3 (maestria fixa pelo nome do título)
+  elemental:   { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'elemental'  },
+  iluminado:   { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'divino'     },
+  manipulador: { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'mental'     },
+  arquimago:   { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'arcano'     },
+  lich:        { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'profano'    },
+  disruptor:   { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'distorcao'  },
+  atemporal:   { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'temporal'   },
+  espectro:    { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'espectral'  },
   // OFICIAL
   membro_guilda_aventureiros: { fonte: 'profissoes', quantidade: 3, nivel: 1, mesmaCategoria: false },
 };
+
+// Títulos que dão +4 de bônus em testes de magia daquela maestria.
+// Para títulos com `trailFixo`, a maestria é determinada por REQUISITO_HABILIDADES.
+// Para os demais (Ordem 1), a maestria é derivada de `bindings[titleId][0].trailId`.
+export const MAGIC_BONUS_TITLES = [
+  'aprendiz_de_conjurador', 'seguidor_da_magia', 'conjurador_tatico',
+  'elemental', 'iluminado', 'manipulador', 'arquimago',
+  'lich', 'disruptor', 'atemporal', 'espectro',
+];
+
+// Retorna o trailId da maestria de magia em que o título dá bônus,
+// ou null se o título ainda não foi adquirido com binding.
+export function getTitleMagicMaestria(titleId, bindings) {
+  const req = REQUISITO_HABILIDADES[titleId];
+  if (req?.trailFixo) return req.trailFixo;
+  const bound = bindings?.[titleId];
+  if (bound && bound.length > 0) return bound[0].trailId;
+  return null;
+}
 
 // ── Build maps ─────────────────────────────────────────────────────────────────
 function buildMaps() {

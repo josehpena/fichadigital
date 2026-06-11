@@ -33,6 +33,7 @@ function getBindableSkills(req, acquiredTrails, bindings) {
   const pool = FONTE_TRAILS[req.fonte] ?? [];
   const byCategory = {};
   for (const trail of pool) {
+    if (req.trailFixo && trail.id !== req.trailFixo) continue;
     const trailData = acquiredTrails[trail.id];
     if (!trailData) continue;
     for (const skill of trail.skills) {
@@ -106,7 +107,9 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
           <Text style={[mStyles.title, { color }]}>{title.nome}</Text>
           <Text style={mStyles.subtitle}>
             Selecione {req.quantidade} habilidades de {FONTE_LABEL[req.fonte]} nível ≥ {req.nivel}
-            {req.mesmaCategoria ? ' da mesma Maestria' : ''}
+            {req.trailFixo
+              ? ` da Maestria ${(FONTE_TRAILS[req.fonte] ?? []).find(t => t.id === req.trailFixo)?.nome ?? req.trailFixo}`
+              : req.mesmaCategoria ? ' da mesma Maestria' : ''}
           </Text>
           <Text style={[mStyles.count, canConfirm && { color }]}>
             {selected.length}/{req.quantidade} selecionadas
