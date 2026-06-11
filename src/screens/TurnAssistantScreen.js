@@ -224,12 +224,13 @@ const MANA_REDUCE_TITLES = ['feiticeiro'];
 // confronto Nv1 = vigor incondicional; Nv2 = robustez condicional (mostramos mas não somamos)
 // bloqueador Nv1 = briga (condicional: "se briga < bloqueio base")
 // fatiador Nv1 = armasBrancas (dano E bloqueio)
+// source: 'skill' lê de character.skills; 'attr' lê de character.attributes[group][subAttr]
 const WEAPON_SKILL_BLOCK_MODS = {
-  fatiador:   { minLevel: 1, statKey: 'armasBrancas', statLabel: 'Armas Brancas',
+  fatiador:   { minLevel: 1, source: 'skill', statKey: 'armasBrancas', statLabel: 'Armas Brancas',
     multiplier: (selLv) => selLv >= 3 ? 2 : 1, unconditional: true },
-  bloqueador: { minLevel: 1, statKey: 'briga',        statLabel: 'Briga',
+  bloqueador: { minLevel: 1, source: 'skill', statKey: 'briga',        statLabel: 'Briga',
     multiplier: () => 1, unconditional: true },
-  confronto:  { minLevel: 1, statKey: 'vigor',        statLabel: 'Vigor',
+  confronto:  { minLevel: 1, source: 'attr', group: 'robustez', subAttr: 'vigor', statLabel: 'Vigor',
     multiplier: () => 1, unconditional: true },
 };
 
@@ -253,7 +254,7 @@ function getAllBlockSkills(equipment, acquiredTrails) {
   return out;
 }
 
-function getBlockBonuses(blockWeapons, allLevels, characterSkills) {
+function getBlockBonuses(blockWeapons, allLevels, characterSkills, characterAttrs) {
   const bonuses = [];
   for (const { slotKey, weaponNome, skills } of blockWeapons) {
     const slotLevels = allLevels[slotKey] ?? {};
@@ -262,7 +263,10 @@ function getBlockBonuses(blockWeapons, allLevels, characterSkills) {
       if (!mod || !mod.unconditional) continue;
       const selLv = slotLevels[sk.id] ?? 0;
       if (selLv < mod.minLevel) continue;
-      const val = (characterSkills[mod.statKey] ?? 0) * mod.multiplier(selLv);
+      const base = mod.source === 'attr'
+        ? (characterAttrs?.[mod.group]?.[mod.subAttr] ?? 0)
+        : (characterSkills?.[mod.statKey] ?? 0);
+      const val = base * mod.multiplier(selLv);
       bonuses.push({ label: mod.statLabel, val, slotKey, weaponNome });
     }
   }
@@ -830,7 +834,7 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   }
 
   // Bônus numéricos incondicionais ao bloqueio (uma entrada por arma ativa)
-  const blockBonuses    = getBlockBonuses(blockWeapons, blockLevels, skills ?? {});
+  const blockBonuses    = getBlockBonuses(blockWeapons, blockLevels, skills ?? {}, attrs ?? {});
   const blockBonusTotal = blockBonuses.reduce((a, b) => a + b.val, 0);
 
   // Maior nível ativo de cada skill (entre todas as armas) — usado para tira/efeitos condicionais
