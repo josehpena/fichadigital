@@ -10,7 +10,7 @@ import {
   HAND_SLOTS,
   xpCostForRange,
 } from '../data/initialCharacter';
-import { findTrail, findCategoryTrails, TRAILS_MAGIAS } from '../data/trailsData';
+import { findTrail, findCategoryTrails, TRAILS_MAGIAS, TRAILS_PROFISSOES } from '../data/trailsData';
 import { findTitleById } from '../data/titlesData';
 import { SUBRACE_BY_ID } from '../data/racesData';
 
@@ -28,6 +28,22 @@ const CharacterContext = createContext(null);
 
 function clamp(value, min = 0, max = Infinity) {
   return Math.max(min, Math.min(max, value));
+}
+
+// Azunam:
+//  - "Podem pagar metade do custo em EXP para adquirir MAESTRIAS de profissões"
+//  - "Se a sua 1ª e 2ª MAESTRIA for de magia, os custos serão de primeira maestria"
+// Retorna o custo ajustado para uma trilha sendo adquirida agora.
+function applyRaceTrailDiscount(state, trailId, baseCost) {
+  if (state.race?.subraceId !== 'azunam') return baseCost;
+  if (TRAILS_PROFISSOES.some(t => t.id === trailId)) {
+    return Math.ceil(baseCost / 2);
+  }
+  if (TRAILS_MAGIAS.some(t => t.id === trailId)) {
+    const magicAcquired = TRAILS_MAGIAS.filter(t => state.skillTree.acquiredTrails[t.id]).length;
+    if (magicAcquired < 2) return 40; // custo da primeira maestria
+  }
+  return baseCost;
 }
 
 // Impacto de cada subatributo nos tetos de status
@@ -686,13 +702,15 @@ function reducer(state, action) {
       if (state.skillTree.acquiredTrails[action.trailId]) return state; // already acquired
       const trail = findTrail(action.trailId);
       if (!trail) return state;
-      const nextCost = 40 + state.skillTree.trailCount * 20;
+      const baseCost = 40 + state.skillTree.trailCount * 20;
+      const nextCost = applyRaceTrailDiscount(state, action.trailId, baseCost);
       if (state.status.xp.current < nextCost) return state;
       const newXp = { ...state.status.xp, current: state.status.xp.current - nextCost };
       return {
         ...state,
         status: { ...state.status, xp: newXp },
         skillTree: {
+          ...state.skillTree,
           trailCount: state.skillTree.trailCount + 1,
           acquiredTrails: {
             ...state.skillTree.acquiredTrails,
@@ -723,6 +741,11 @@ function reducer(state, action) {
         // Respeita custo personalizado definido antes da aquisição
         if (!trail.categoria || !nextCost) {
           nextCost = state.skillTree.customCosts?.[action.trailId] ?? nextCost;
+        }
+        // Desconto racial (Azunam): só aplica se não veio de categoria/customCost,
+        // pois esses já trazem um custo decidido pelo jogador.
+        if (!trail.categoria && !state.skillTree.customCosts?.[action.trailId]) {
+          nextCost = applyRaceTrailDiscount(state, action.trailId, nextCost);
         }
 
         trailData = { cost: nextCost, skills: {} };
