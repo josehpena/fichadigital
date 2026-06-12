@@ -178,3 +178,13 @@ export function isConditionActive(condicao, character) {
   }
   return null;
 }
+
+// Bônus de armadura derivado da raça (ex.: Farenheit soma Robustez enquanto equipado).
+// Retorna { val, label } ou null.
+export function computeRaceArmorBonus(character) {
+  if (character?.race?.subraceId !== 'farenheit') return null;
+  if (!isConditionActive('tem_armadura', character)) return null;
+  const r = character?.attributes?.robustez ?? {};
+  const val = (r.forca ?? 0) + (r.destreza ?? 0) + (r.vigor ?? 0);
+  return val > 0 ? { val, label: 'Robustez (Farenheit)' } : null;
+}

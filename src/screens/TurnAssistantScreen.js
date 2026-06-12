@@ -6,6 +6,7 @@ import { useCharacter } from '../context/CharacterContext';
 import { HAND_SLOTS, ARMOR_SLOTS, EQUIP_LABELS, computeDefenseTotals, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
 import { TITLE_BY_ID, MAGIC_BONUS_TITLES, getTitleMagicMaestria } from '../data/titlesData';
+import { computeRaceArmorBonus } from '../data/racesData';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -839,7 +840,9 @@ function DefendPanel({ actionsLeft, onConfirm, onBlock }) {
   // Estado por arma: { [slotKey]: { [skillId]: level } } — cada arma seleciona suas próprias habilidades
   const [blockLevels, setBlockLevels] = useState({});
 
-  const { totalArmadura } = computeDefenseTotals(character.equipment, character.accessories);
+  const { totalArmadura: baseArmadura } = computeDefenseTotals(character.equipment, character.accessories);
+  const raceArmorBonus = computeRaceArmorBonus(character);
+  const totalArmadura = baseArmadura + (raceArmorBonus?.val ?? 0);
 
   // Todas as armas com habilidades relevantes para bloqueio
   const blockWeapons = getAllBlockSkills(character.equipment, character.skillTree?.acquiredTrails);
@@ -1170,6 +1173,9 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const acquiredTitles = character.titles?.acquired ?? [];
   const bindings       = character.titles?.bindings ?? {};
   const manaReduce = MANA_REDUCE_TITLES.some(id => acquiredTitles.includes(id)) ? 1 : 0;
+  // Mago: +5m de alcance em todas as magias com alcance definido
+  const alcanceBonus = acquiredTitles.includes('mago') ? 5 : 0;
+  const alcanceFor   = (a) => (a == null ? null : a + alcanceBonus);
 
   // Coleta tiras de couro de todos os equipamentos (mão + armaduras + acessórios)
   const allTiras = [];
@@ -1222,16 +1228,15 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const titleBonusTotal = titleBonuses.reduce((acc, b) => acc + b.val, 0);
 
   // Armas equipadas que têm habilidades afetando intensidade (cetros, varinhas)
+  // Inclui tipo2 (segunda trilha da arma) também.
   const intensityWeapons = [];
-  for (const slotKey of HAND_SLOTS) {
-    const eq = character.equipment?.[slotKey];
-    if (!eq?.tipo) continue;
-    const cfg = MAGIC_INTENSITY_WEAPON_SKILLS[eq.tipo];
-    if (!cfg) continue;
-    const acquired = character.skillTree?.acquiredTrails?.[eq.tipo];
-    if (!acquired) continue;
-    const trail = TRAILS_ARMAS.find(t => t.id === eq.tipo);
-    if (!trail) continue;
+  function collectIntensitySkills(slotKey, weaponNome, trailId) {
+    const cfg = trailId ? MAGIC_INTENSITY_WEAPON_SKILLS[trailId] : null;
+    if (!cfg) return;
+    const acquired = character.skillTree?.acquiredTrails?.[trailId];
+    if (!acquired) return;
+    const trail = TRAILS_ARMAS.find(t => t.id === trailId);
+    if (!trail) return;
     const skills = [];
     for (const sk of trail.skills) {
       if (!cfg[sk.id]) continue;
@@ -1240,8 +1245,16 @@ function MagicPanel({ actionsLeft, onConfirm }) {
       skills.push({ id: sk.id, nome: sk.nome, learned, niveis: sk.niveis ?? {}, cfg: cfg[sk.id] });
     }
     if (skills.length > 0) {
-      intensityWeapons.push({ slotKey, weaponNome: eq.nome || trail.nome, skills });
+      // chave única para evitar colisão de skills entre tipo e tipo2 do mesmo slot
+      intensityWeapons.push({ slotKey: `${slotKey}:${trailId}`, weaponNome, skills });
     }
+  }
+  for (const slotKey of HAND_SLOTS) {
+    const eq = character.equipment?.[slotKey];
+    if (!eq) continue;
+    const nome = eq.nome || '';
+    if (eq.tipo)  collectIntensitySkills(slotKey, nome || eq.tipo,  eq.tipo);
+    if (eq.tipo2) collectIntensitySkills(slotKey, nome || eq.tipo2, eq.tipo2);
   }
 
   // Bônus FLAT de intensidade vindos de skills de arma (Nv1: soma X)
@@ -1449,7 +1462,11 @@ function MagicPanel({ actionsLeft, onConfirm }) {
               <View style={s.spellStats}>
                 <Text style={[s.spellStat, semMana && { color: '#f38ba8' }]}>🔵 {custo} mana</Text>
                 <Text style={s.spellStat}>🎯 {sp.dificuldade}</Text>
-                {sp.alcance != null && <Text style={s.spellStat}>📏 {sp.alcance}m</Text>}
+                {sp.alcance != null && (
+                  <Text style={s.spellStat}>
+                    📏 {alcanceFor(sp.alcance)}m{alcanceBonus > 0 ? ` (+${alcanceBonus} Mago)` : ''}
+                  </Text>
+                )}
                 {sp.raio != null && <Text style={s.spellStat}>💫 Raio {sp.raio}m</Text>}
                 <Text style={s.spellStat}>⏱ {sp.duracao}</Text>
               </View>
@@ -1470,7 +1487,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
                     onPress={() => setDoubleAlcance(v => !v)}
                   >
                     <Text style={[s.spellActionText, doubleFaixo && s.spellActionTextActive]}>
-                      Dobrar alcance +1 mana → {sp.alcance * 2}m
+                      Dobrar alcance +1 mana → {alcanceFor(sp.alcance) * 2}m
                     </Text>
                   </TouchableOpacity>
                 )}

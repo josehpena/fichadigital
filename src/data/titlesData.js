@@ -222,6 +222,17 @@ export const REQUISITO_HABILIDADES = {
   aprendiz_de_conjurador: { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
   seguidor_da_magia:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
   conjurador_tatico:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
+  // MILITAR / MÁGICA – Nível 2 (3 magias level 2 da Maestria fixa)
+  // Obs: "Maestria Taumaturgia" do Feiticeiro foi mapeada para a trilha Elemental
+  //      (seu descendente Ordem 3 é Elemental, com trailFixo: 'elemental').
+  feiticeiro:        { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'elemental' },
+  transmutador:      { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'distorcao' },
+  moldador_do_tempo: { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'temporal'  },
+  clerigo:           { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'divino'    },
+  ilusionista:       { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'mental'    },
+  mago:              { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'arcano'    },
+  bruxo:             { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'espectral' },
+  necromante:        { fonte: 'magias', quantidade: 3, nivel: 2, mesmaCategoria: true, trailFixo: 'profano'   },
   // MILITAR / MÁGICA – Nível 3 (maestria fixa pelo nome do título)
   elemental:   { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'elemental'  },
   iluminado:   { fonte: 'magias', quantidade: 3, nivel: 3, mesmaCategoria: true, trailFixo: 'divino'     },
