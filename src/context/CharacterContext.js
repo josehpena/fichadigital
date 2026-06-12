@@ -10,9 +10,9 @@ import {
   HAND_SLOTS,
   xpCostForRange,
 } from '../data/initialCharacter';
-import { findTrail, findCategoryTrails, TRAILS_MAGIAS, TRAILS_PROFISSOES } from '../data/trailsData';
+import { findTrail, findCategoryTrails, TRAILS_MAGIAS } from '../data/trailsData';
 import { findTitleById } from '../data/titlesData';
-import { SUBRACE_BY_ID } from '../data/racesData';
+import { SUBRACE_BY_ID, raceTrailDiscountedCost } from '../data/racesData';
 
 // Descobre a categoria de uma perícia
 function getSkillCategory(skill) {
@@ -30,20 +30,9 @@ function clamp(value, min = 0, max = Infinity) {
   return Math.max(min, Math.min(max, value));
 }
 
-// Azunam:
-//  - "Podem pagar metade do custo em EXP para adquirir MAESTRIAS de profissões"
-//  - "Se a sua 1ª e 2ª MAESTRIA for de magia, os custos serão de primeira maestria"
-// Retorna o custo ajustado para uma trilha sendo adquirida agora.
+// Desconto racial de XP para aquisição de trilhas (ver racesData.js)
 function applyRaceTrailDiscount(state, trailId, baseCost) {
-  if (state.race?.subraceId !== 'azunam') return baseCost;
-  if (TRAILS_PROFISSOES.some(t => t.id === trailId)) {
-    return Math.ceil(baseCost / 2);
-  }
-  if (TRAILS_MAGIAS.some(t => t.id === trailId)) {
-    const magicAcquired = TRAILS_MAGIAS.filter(t => state.skillTree.acquiredTrails[t.id]).length;
-    if (magicAcquired < 2) return 40; // custo da primeira maestria
-  }
-  return baseCost;
+  return raceTrailDiscountedCost(state.race, state.skillTree.acquiredTrails, trailId, baseCost);
 }
 
 // Impacto de cada subatributo nos tetos de status

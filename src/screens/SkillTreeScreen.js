@@ -6,6 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import { TRAILS_PROFISSOES, TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
+import { raceTrailDiscountedCost } from '../data/racesData';
 
 const CATEGORY_TABS = [
   { key: 'profissoes', label: 'Profissões', color: '#fab387', trails: TRAILS_PROFISSOES },
@@ -118,7 +119,12 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
   const trailData    = character.skillTree.acquiredTrails[trail.id];
   const acquired     = !!trailData;
   const customCost   = character.skillTree.customCosts?.[trail.id];
-  const trailCost    = trailData?.cost ?? customCost ?? nextTrailCost;
+  const baseCost     = trailData?.cost ?? customCost ?? nextTrailCost;
+  // Desconto racial (Azunam) — só em trilhas ainda não adquiridas e sem custo customizado
+  const trailCost    = (!acquired && customCost == null)
+    ? raceTrailDiscountedCost(character.race, character.skillTree.acquiredTrails, trail.id, baseCost)
+    : baseCost;
+  const hasDiscount  = trailCost < baseCost;
   const totalLevels  = trailData
     ? Object.values(trailData.skills).reduce((s, v) => s + v, 0)
     : 0;
@@ -146,9 +152,18 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
           )}
         </View>
         <View style={styles.trailBadge}>
-          <Text style={[styles.trailBadgeText, { color: acquired ? color : '#45475a' }]}>
-            {trailCost} XP/nível
-          </Text>
+          {hasDiscount ? (
+            <View style={styles.discountRow}>
+              <Text style={styles.trailCostFull}>{baseCost}</Text>
+              <Text style={[styles.trailBadgeText, styles.trailCostDiscounted]}>
+                {trailCost} XP/nível
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.trailBadgeText, { color: acquired ? color : '#45475a' }]}>
+              {trailCost} XP/nível
+            </Text>
+          )}
           {acquired && totalLevels > 0 && (
             <Text style={styles.trailLevels}>{totalLevels} pts</Text>
           )}
@@ -269,6 +284,12 @@ export default function SkillTreeScreen() {
   const nextTrailCost = 40 + character.skillTree.trailCount * 20;
   const tab = CATEGORY_TABS.find(t => t.key === activeTab);
 
+  // Desconto racial (Azunam) para a categoria da aba ativa
+  const nextTrailDiscounted = tab.trails.length > 0
+    ? raceTrailDiscountedCost(character.race, character.skillTree.acquiredTrails, tab.trails[0].id, nextTrailCost)
+    : nextTrailCost;
+  const nextHasDiscount = nextTrailDiscounted < nextTrailCost;
+
   const totalAcquired = Object.keys(character.skillTree.acquiredTrails).length;
 
   return (
@@ -283,12 +304,25 @@ export default function SkillTreeScreen() {
           </View>
           <View style={styles.badge}>
             <Text style={styles.badgeLabel}>Próxima</Text>
-            <Text style={[
-              styles.badgeValue,
-              nextTrailCost > character.status.xp.current && { color: '#f38ba8' },
-            ]}>
-              {nextTrailCost} XP
-            </Text>
+            {nextHasDiscount ? (
+              <View style={styles.discountRow}>
+                <Text style={styles.trailCostFull}>{nextTrailCost}</Text>
+                <Text style={[
+                  styles.badgeValue,
+                  styles.trailCostDiscounted,
+                  nextTrailDiscounted > character.status.xp.current && { color: '#f38ba8' },
+                ]}>
+                  {nextTrailDiscounted} XP
+                </Text>
+              </View>
+            ) : (
+              <Text style={[
+                styles.badgeValue,
+                nextTrailCost > character.status.xp.current && { color: '#f38ba8' },
+              ]}>
+                {nextTrailCost} XP
+              </Text>
+            )}
           </View>
         </View>
       </View>
@@ -374,6 +408,12 @@ const styles = StyleSheet.create({
   trailCategory: { color: '#6c7086', fontSize: 11 },
   trailBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   trailBadgeText: { fontSize: 11, fontStyle: 'italic' },
+  discountRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  trailCostFull: {
+    color: '#6c7086', fontSize: 11,
+    textDecorationLine: 'line-through',
+  },
+  trailCostDiscounted: { color: '#a6e3a1' },
   trailLevels: { color: '#6c7086', fontSize: 12 },
   chevron: { color: '#6c7086', fontSize: 11 },
   skillList: { paddingHorizontal: 12, paddingBottom: 8 },
