@@ -9,6 +9,7 @@
 //       'tem_armadura'  → tem ao menos 1 peça de armadura com durabilidade > 0
 
 import { ARMOR_SLOTS } from './initialCharacter';
+import { TRAILS_MAGIAS, TRAILS_PROFISSOES } from './trailsData';
 
 export const RACES = [
   {
@@ -177,4 +178,30 @@ export function isConditionActive(condicao, character) {
     return ARMOR_SLOTS.some(k => (character?.equipment?.[k]?.durabilidade ?? 0) > 0);
   }
   return null;
+}
+
+// Azunam:
+//  - "Podem pagar metade do custo em EXP para adquirir MAESTRIAS de profissões"
+//  - "Se a sua 1ª e 2ª MAESTRIA for de magia, os custos serão de primeira maestria"
+// Retorna o custo ajustado para a trilha; igual ao baseCost se não houver desconto.
+export function raceTrailDiscountedCost(race, acquiredTrails, trailId, baseCost) {
+  if (race?.subraceId !== 'azunam') return baseCost;
+  if (TRAILS_PROFISSOES.some(t => t.id === trailId)) {
+    return Math.ceil(baseCost / 2);
+  }
+  if (TRAILS_MAGIAS.some(t => t.id === trailId)) {
+    const magicAcquired = TRAILS_MAGIAS.filter(t => acquiredTrails?.[t.id]).length;
+    if (magicAcquired < 2) return Math.min(baseCost, 40); // custo da primeira maestria
+  }
+  return baseCost;
+}
+
+// Bônus de armadura derivado da raça (ex.: Farenheit soma Robustez enquanto equipado).
+// Retorna { val, label } ou null.
+export function computeRaceArmorBonus(character) {
+  if (character?.race?.subraceId !== 'farenheit') return null;
+  if (!isConditionActive('tem_armadura', character)) return null;
+  const r = character?.attributes?.robustez ?? {};
+  const val = (r.forca ?? 0) + (r.destreza ?? 0) + (r.vigor ?? 0);
+  return val > 0 ? { val, label: 'Robustez (Farenheit)' } : null;
 }

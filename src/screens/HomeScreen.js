@@ -9,7 +9,7 @@ import StatusCard from '../components/StatusCard';
 import { computeDefenseTotals, COMPUTED_STATUS_KEYS, STATUS_LABELS, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TITLE_BY_ID } from '../data/titlesData';
 import { TRAILS_MAGIAS } from '../data/trailsData';
-import { SUBRACE_BY_ID, isConditionActive } from '../data/racesData';
+import { SUBRACE_BY_ID, isConditionActive, computeRaceArmorBonus } from '../data/racesData';
 
 // ─── Modal de Efeito Narrativo ────────────────────────────────────────────────
 const STATUS_KEYS_SELECTABLE = COMPUTED_STATUS_KEYS; // vida, energia, mana, forcaDeVontade
@@ -168,10 +168,12 @@ export default function HomeScreen() {
       ]
     );
 
-  const { totalArmadura, totalResMagica, totalReputacao } = computeDefenseTotals(
+  const { totalArmadura: baseArmadura, totalResMagica, totalReputacao } = computeDefenseTotals(
     character.equipment,
     character.accessories
   );
+  const raceArmorBonus = computeRaceArmorBonus(character);
+  const totalArmadura  = baseArmadura + (raceArmorBonus?.val ?? 0);
   const reputacaoBase =
     character.attributes.reputacao.manha +
     character.attributes.reputacao.carisma +
@@ -209,6 +211,9 @@ export default function HomeScreen() {
           <Text style={styles.defenseIcon}>🛡️</Text>
           <Text style={styles.defenseLabel}>Armadura</Text>
           <Text style={styles.defenseValue}>{totalArmadura}</Text>
+          {raceArmorBonus && (
+            <Text style={styles.defenseBonus}>+{raceArmorBonus.val} {raceArmorBonus.label}</Text>
+          )}
         </View>
         <View style={styles.defenseBadge}>
           <Text style={styles.defenseIcon}>✨</Text>
