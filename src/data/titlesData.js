@@ -213,11 +213,35 @@ const CATEGORIAS_RAW = [
 // do skill tree no momento da aquisição. As habilidades ficam "vinculadas" e não
 // podem ser usadas para satisfazer o requisito de outro título.
 export const REQUISITO_HABILIDADES = {
-  // MILITAR / FÍSICA – Nível 1
-  rufiao:                 { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
-  guerreiro:              { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
-  recruta:                { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
-  gatuno:                 { fonte: 'armas',     quantidade: 3, nivel: 1, mesmaCategoria: true },
+  // MILITAR / FÍSICA – Nível 1 (3 habs lvl 1 da mesma trilha de arma)
+  rufiao:                 { fonte: 'armas', quantidade: 3, nivel: 1, mesmaTrilha: true },
+  guerreiro:              { fonte: 'armas', quantidade: 3, nivel: 1, mesmaTrilha: true },
+  recruta:                { fonte: 'armas', quantidade: 3, nivel: 1, mesmaTrilha: true },
+  gatuno:                 { fonte: 'armas', quantidade: 3, nivel: 1, mesmaTrilha: true },
+  // MILITAR / FÍSICA – Nível 2 (todas da mesma trilha, dentro da whitelist)
+  barbaro:     { fonte: 'armas', quantidade: 3, nivel: 1, mesmaTrilha: true,
+    trilhasPermitidas: ['espada_longa', 'lanca', 'machado_do_norte', 'machado_do_sul'] },
+  soldado:     { fonte: 'armas', quantidade: 2, nivel: 2, mesmaTrilha: true },
+  mercenario:  { fonte: 'armas', quantidade: 2, nivel: 2, mesmaTrilha: true,
+    trilhasPermitidas: ['espada_curta', 'arco_longo', 'besta', 'adaga'] },
+  defensor:    { fonte: 'armas', quantidade: 2, nivel: 2, mesmaTrilha: true,
+    trilhasPermitidas: ['escudo_largo', 'escudo_tatico'] },
+  patrulheiro: { fonte: 'armas', quantidade: 2, nivel: 1, mesmaTrilha: true,
+    trilhasPermitidas: ['arco_longo', 'besta', 'adaga'] },
+  lutador:     { fonte: 'armas', quantidade: 3, nivel: 1, mesmaTrilha: true,
+    trilhasPermitidas: ['luvas_de_batalha'] },
+  // MILITAR / FÍSICA – Nível 3
+  algoz:       { fonte: 'armas', quantidade: 3, nivel: 1, mesmaTrilha: true,
+    trilhasPermitidas: ['espada_longa', 'lanca', 'machado_do_norte', 'machado_do_sul'] },
+  cavaleiro:   { fonte: 'armas', quantidade: 2, nivel: 3, mesmaTrilha: true },
+  executor:    { fonte: 'armas', quantidade: 2, nivel: 3, mesmaTrilha: true,
+    trilhasPermitidas: ['espada_curta', 'arco_longo', 'besta', 'adaga'] },
+  encouracado: { fonte: 'armas', quantidade: 2, nivel: 3, mesmaTrilha: true,
+    trilhasPermitidas: ['escudo_largo', 'escudo_tatico'] },
+  guardiao:    { fonte: 'armas', quantidade: 2, nivel: 2, mesmaTrilha: true,
+    trilhasPermitidas: ['arco_longo', 'besta', 'adaga'] },
+  monge:       { fonte: 'armas', quantidade: 3, nivel: 2, mesmaTrilha: true,
+    trilhasPermitidas: ['luvas_de_batalha'] },
   // MILITAR / MÁGICA – Nível 1
   aprendiz_de_conjurador: { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
   seguidor_da_magia:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },

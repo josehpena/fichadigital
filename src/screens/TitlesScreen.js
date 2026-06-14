@@ -34,13 +34,18 @@ function getBindableSkills(req, acquiredTrails, bindings) {
   const byCategory = {};
   for (const trail of pool) {
     if (req.trailFixo && trail.id !== req.trailFixo) continue;
+    if (req.trilhasPermitidas && !req.trilhasPermitidas.includes(trail.id)) continue;
     const trailData = acquiredTrails[trail.id];
     if (!trailData) continue;
     for (const skill of trail.skills) {
       const level = trailData.skills[skill.id] ?? 0;
       if (level < req.nivel) continue;
       if (allBound.has(`${trail.id}:${skill.id}`)) continue;
-      const cat = trail.categoria ?? trail.nome;
+      // mesmaTrilha: agrupa por trilha (ignora categoria mesmo se houver).
+      // Caso contrário, mantém o comportamento legado (categoria ou nome).
+      const cat = req.mesmaTrilha
+        ? trail.nome
+        : (trail.categoria ?? trail.nome);
       if (!byCategory[cat]) byCategory[cat] = [];
       byCategory[cat].push({
         trailId: trail.id, skillId: skill.id,
@@ -53,7 +58,7 @@ function getBindableSkills(req, acquiredTrails, bindings) {
 
 function hasEnoughBindable(req, acquiredTrails, bindings) {
   const by = getBindableSkills(req, acquiredTrails, bindings);
-  if (req.mesmaCategoria) return Object.values(by).some(a => a.length >= req.quantidade);
+  if (req.mesmaCategoria || req.mesmaTrilha) return Object.values(by).some(a => a.length >= req.quantidade);
   return Object.values(by).flat().length >= req.quantidade;
 }
 
@@ -82,10 +87,10 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
       if (req.mesmaCategoria && next.length === 0) setLockedCat(null);
     } else {
       if (selected.length >= req.quantidade) return;
-      if (req.mesmaCategoria && lockedCat && lockedCat !== sk.categoria) return;
+      if ((req.mesmaCategoria || req.mesmaTrilha) && lockedCat && lockedCat !== sk.categoria) return;
       const next = [...selected, { trailId: sk.trailId, skillId: sk.skillId, nome: sk.nome }];
       setSelected(next);
-      if (req.mesmaCategoria && !lockedCat) setLockedCat(sk.categoria);
+      if ((req.mesmaCategoria || req.mesmaTrilha) && !lockedCat) setLockedCat(sk.categoria);
     }
   };
 
@@ -109,7 +114,10 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
             Selecione {req.quantidade} habilidades de {FONTE_LABEL[req.fonte]} nível ≥ {req.nivel}
             {req.trailFixo
               ? ` da Maestria ${(FONTE_TRAILS[req.fonte] ?? []).find(t => t.id === req.trailFixo)?.nome ?? req.trailFixo}`
-              : req.mesmaCategoria ? ' da mesma Maestria' : ''}
+              : (req.mesmaCategoria || req.mesmaTrilha) ? ' da mesma Maestria' : ''}
+            {req.trilhasPermitidas && !req.trailFixo && (
+              <Text>{'\n'}Apenas: {(FONTE_TRAILS[req.fonte] ?? []).filter(t => req.trilhasPermitidas.includes(t.id)).map(t => t.nome).join(', ')}</Text>
+            )}
           </Text>
           <Text style={[mStyles.count, canConfirm && { color }]}>
             {selected.length}/{req.quantidade} selecionadas
@@ -120,7 +128,7 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
               <Text style={mStyles.empty}>Nenhuma habilidade disponível para vínculo.</Text>
             ) : (
               Object.entries(byCategory).map(([cat, skills]) => {
-                const catLocked = req.mesmaCategoria && lockedCat && lockedCat !== cat;
+                const catLocked = (req.mesmaCategoria || req.mesmaTrilha) && lockedCat && lockedCat !== cat;
                 return (
                   <View key={cat} style={[mStyles.catGroup, catLocked && mStyles.catGroupLocked]}>
                     <Text style={[mStyles.catLabel, catLocked && { color: '#45475a' }]}>{cat}</Text>
