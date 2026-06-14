@@ -1257,7 +1257,9 @@ function MagicPanel({ actionsLeft, onConfirm }) {
     if (eq.tipo2) collectIntensitySkills(slotKey, nome || eq.tipo2, eq.tipo2);
   }
 
-  // Bônus FLAT de intensidade vindos de skills de arma (Nv1: soma X)
+  // Bônus FLAT de intensidade vindos de skills de arma (Nv1: soma X).
+  // O valor de X inclui as tiras correspondentes (perícia ou atributo) — assim
+  // 5 Instinto + 2 tiras de Instinto = 7 de intensidade com Ascensão.
   const weaponIntensityBonuses = [];
   let hasDoubleAvailable = false;
   for (const w of intensityWeapons) {
@@ -1267,10 +1269,26 @@ function MagicPanel({ actionsLeft, onConfirm }) {
       if (selLv < 1) continue;
       const nv1 = sk.cfg.nv1;
       if (nv1) {
-        const base = nv1.source === 'attr'
-          ? (attrs?.[nv1.group]?.[nv1.subAttr] ?? 0)
-          : (skills?.[nv1.statKey] ?? 0);
-        if (base > 0) weaponIntensityBonuses.push({ label: nv1.label, val: base });
+        let base;
+        let tiraSum = 0;
+        if (nv1.source === 'attr') {
+          base = attrs?.[nv1.group]?.[nv1.subAttr] ?? 0;
+          tiraSum = allTiras
+            .filter(t => t.tipo === 'atributo' && t.subAttr === nv1.subAttr && t.valor)
+            .reduce((s, t) => s + t.valor, 0);
+        } else {
+          base = skills?.[nv1.statKey] ?? 0;
+          tiraSum = allTiras
+            .filter(t => t.tipo === 'pericia' && t.skill === nv1.statKey && t.valor)
+            .reduce((s, t) => s + t.valor, 0);
+        }
+        const total = base + tiraSum;
+        if (total > 0) {
+          const label = tiraSum > 0
+            ? `${nv1.label} (${base}+${tiraSum} tira)`
+            : nv1.label;
+          weaponIntensityBonuses.push({ label, val: total });
+        }
       }
       if (selLv >= 2 && sk.cfg.nv2?.toggleDouble) hasDoubleAvailable = true;
     }
