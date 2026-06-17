@@ -1207,6 +1207,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   const [selSpell, setSelSpell] = useState(null);
   const [doubleFaixo, setDoubleAlcance] = useState(false);
   const [doubleIntensidade, setDoubleIntensidade] = useState(false);
+  const [twoHandMagic, setTwoHandMagic] = useState(false);
   const [expanded, setExpanded]   = useState(null);
   const [d20Input, setD20Input]   = useState('');
   // { [slotKey]: { [skillId]: level } } — habilidades de arma que afetam a intensidade
@@ -1283,11 +1284,15 @@ function MagicPanel({ actionsLeft, onConfirm }) {
             .reduce((s, t) => s + t.valor, 0);
         }
         const total = base + tiraSum;
-        if (total > 0) {
-          const label = tiraSum > 0
-            ? `${nv1.label} (${base}+${tiraSum} tira)`
-            : nv1.label;
-          weaponIntensityBonuses.push({ label, val: total });
+        const handMult = twoHandMagic ? 3 : 1;
+        const finalVal = total * handMult;
+        if (finalVal > 0) {
+          const tiraNote = tiraSum > 0 ? ` (${base}+${tiraSum} tira)` : '';
+          const multNote = handMult > 1 ? `×${handMult}` : '';
+          weaponIntensityBonuses.push({
+            label: `${nv1.label}${multNote}${tiraNote}`,
+            val: finalVal,
+          });
         }
       }
       if (selLv >= 2 && sk.cfg.nv2?.toggleDouble) hasDoubleAvailable = true;
@@ -1330,16 +1335,20 @@ function MagicPanel({ actionsLeft, onConfirm }) {
     }));
   }
 
+  const magicActionCost = twoHandMagic ? 2 : 1;
+
   function confirm() {
-    if (!spell || !podeUsarMana || !podeUsarEnergia || actionsLeft < 1) return;
+    if (!spell || !podeUsarMana || !podeUsarEnergia || actionsLeft < magicActionCost) return;
     dispatch({ type: 'CHANGE_STATUS', statusKey: 'mana', field: 'current', delta: -custoFinal });
     if (weaponSkillEnergyCost > 0) {
       dispatch({ type: 'CHANGE_STATUS', statusKey: 'energia', field: 'current', delta: -weaponSkillEnergyCost });
     }
     onConfirm();
+    if (twoHandMagic) onConfirm(); // 2ª ação gasta
     setSelSpell(null);
     setDoubleAlcance(false);
     setDoubleIntensidade(false);
+    setTwoHandMagic(false);
     setWeaponSkillLevels({});
     setD20Input('');
   }
@@ -1523,6 +1532,15 @@ function MagicPanel({ actionsLeft, onConfirm }) {
       {/* Habilidades de Arma que afetam Intensidade (cetros, varinhas) */}
       {intensityWeapons.length > 0 && (
         <>
+          <Text style={s.subLabel}>Empunhadura</Text>
+          <View style={s.chipRow}>
+            <TouchableOpacity style={[s.chip, !twoHandMagic && s.chipActive]} onPress={() => setTwoHandMagic(false)}>
+              <Text style={[s.chipText, !twoHandMagic && s.chipTextActive]}>Uma mão</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.chip, twoHandMagic && s.chipActive]} onPress={() => setTwoHandMagic(true)}>
+              <Text style={[s.chipText, twoHandMagic && s.chipTextActive]}>Duas mãos · Ascensão ×3</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={s.subLabel}>Habilidades de Arma — Intensidade</Text>
           <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
           {intensityWeapons.map(w => (
@@ -1586,12 +1604,12 @@ function MagicPanel({ actionsLeft, onConfirm }) {
 
       {spell && (
         <TouchableOpacity
-          style={[s.confirmBtn, (!podeUsarMana || !podeUsarEnergia || actionsLeft < 1) && s.confirmBtnDisabled]}
+          style={[s.confirmBtn, (!podeUsarMana || !podeUsarEnergia || actionsLeft < magicActionCost) && s.confirmBtnDisabled]}
           onPress={confirm}
-          disabled={!podeUsarMana || !podeUsarEnergia || actionsLeft < 1}
+          disabled={!podeUsarMana || !podeUsarEnergia || actionsLeft < magicActionCost}
         >
           <Text style={s.confirmBtnText}>
-            Conjurar {spell.skillNome}  −1 Ação  −{custoFinal} Mana
+            Conjurar {spell.skillNome}  −{magicActionCost} {magicActionCost === 2 ? 'Ações' : 'Ação'}  −{custoFinal} Mana
             {weaponSkillEnergyCost > 0 ? `  −${weaponSkillEnergyCost} Energia` : ''}
           </Text>
         </TouchableOpacity>
