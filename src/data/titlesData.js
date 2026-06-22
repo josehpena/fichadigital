@@ -138,7 +138,7 @@ const CATEGORIAS_RAW = [
             requisitos: ['2 Títulos de classe Militares lvl 3', 'Membro da GUILDA de Aventureiros'] },
           { id: 'domador_de_feras', nome: 'Domador de Feras', ordem: 1,
             beneficios: ['Soma EMPATIA em testes Sociais contra criaturas irracionais', 'Mesmo quando falhar em teste para domar criaturas, a fera não fica hostil por mais um turno'],
-            requisitos: ['Profissão CHARCUTEIRO e CAÇADOR'] },
+            requisitos: ['3 habilidades de CHEFE DA CAÇADA lvl 1'] },
         ],
       },
     ],
@@ -242,6 +242,9 @@ export const REQUISITO_HABILIDADES = {
     trilhasPermitidas: ['arco_longo', 'besta', 'adaga'] },
   monge:       { fonte: 'armas', quantidade: 3, nivel: 2, mesmaTrilha: true,
     trilhasPermitidas: ['luvas_de_batalha'] },
+  // MILITAR / FÍSICA – Domador de Feras
+  domador_de_feras: { fonte: 'profissoes', quantidade: 3, nivel: 1, mesmaTrilha: true,
+    trilhasPermitidas: ['chefe_da_cacada'] },
   // MILITAR / MÁGICA – Nível 1
   aprendiz_de_conjurador: { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
   seguidor_da_magia:      { fonte: 'magias',    quantidade: 3, nivel: 1, mesmaCategoria: true },
