@@ -1284,7 +1284,9 @@ function MagicPanel({ actionsLeft, onConfirm }) {
             .reduce((s, t) => s + t.valor, 0);
         }
         const total = base + tiraSum;
-        const handMult = twoHandMagic ? 3 : 1;
+        // Duas mãos só multiplica Ascensão — outras skills de intensidade
+        // (caso adicionemos no futuro) não recebem o ×3 da empunhadura.
+        const handMult = (twoHandMagic && sk.id === 'ascensao') ? 3 : 1;
         const finalVal = total * handMult;
         if (finalVal > 0) {
           const tiraNote = tiraSum > 0 ? ` (${base}+${tiraSum} tira)` : '';
