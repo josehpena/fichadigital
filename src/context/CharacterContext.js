@@ -989,6 +989,27 @@ function reducer(state, action) {
       return { ...state, inventory: { ...state.inventory, moedas: novas } };
     }
 
+    // { nome, obs, price } — compra na loja: encontra slot vazio na bolsa,
+    // grava o item e desconta as moedas. Falha silenciosa se cheio ou sem moedas.
+    case 'INVENTORY_BUY_ITEM': {
+      const { bolsa, moedas } = state.inventory;
+      if ((moedas || 0) < action.price) return state;
+      const idx = bolsa.itens.findIndex(
+        (it, i) => i < bolsa.capacidade && !it?.nome
+      );
+      if (idx < 0) return state;
+      const newItens = [...bolsa.itens];
+      newItens[idx] = { nome: action.nome, obs: action.obs || '' };
+      return {
+        ...state,
+        inventory: {
+          ...state.inventory,
+          moedas: (moedas || 0) - action.price,
+          bolsa: { ...bolsa, itens: newItens },
+        },
+      };
+    }
+
     // { entry: { categoria, titulo, conteudo, tags?, status? } }
     case 'JOURNAL_ADD': {
       const entry = {

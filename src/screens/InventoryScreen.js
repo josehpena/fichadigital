@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import { ARMOR_SLOTS, EQUIP_LABELS, ATTRIBUTE_LABELS, SKILL_LABELS } from '../data/initialCharacter';
 import { TRAILS_ARMAS } from '../data/trailsData';
+import ShopModal from '../components/ShopModal';
 
 const ATTR_SUB_KEYS = ['forca','destreza','vigor','manha','carisma','etiqueta','percepcao','raciocinio','inteligencia'];
 const RECOVERY_STATUS_KEYS = ['vida','energia','mana','forcaDeVontade','humanidade'];
@@ -1102,6 +1103,7 @@ function NewStorageModal({ visible, onClose, dispatch }) {
 export default function InventoryScreen() {
   const { character, dispatch } = useCharacter();
   const [showNewStorage, setShowNewStorage] = useState(false);
+  const [showShop, setShowShop]             = useState(false);
 
   const inv = character.inventory ?? {
     bolsa: { capacidade: 6, itens: [] },
@@ -1128,6 +1130,14 @@ export default function InventoryScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+
+      {/* ── Botão de Lojas ── */}
+      <TouchableOpacity style={styles.shopBtn} onPress={() => setShowShop(true)}>
+        <Text style={styles.shopBtnIcon}>🛒</Text>
+        <Text style={styles.shopBtnText}>Lojas</Text>
+        <Text style={styles.shopBtnHint}>catálogo · {moedas} 🪙</Text>
+      </TouchableOpacity>
+      <ShopModal visible={showShop} onClose={() => setShowShop(false)} />
 
       {/* ── Bolsa ── */}
       <View style={styles.sectionHeader}>
@@ -1215,6 +1225,16 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   screen:  { flex: 1, backgroundColor: '#11111b' },
   content: { padding: 14, paddingBottom: 48 },
+
+  shopBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#1e1e2e', borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 12,
+    marginBottom: 14, borderWidth: 1, borderColor: '#89b4fa55',
+  },
+  shopBtnIcon: { fontSize: 20 },
+  shopBtnText: { color: '#89b4fa', fontSize: 14, fontWeight: '700', flex: 1 },
+  shopBtnHint: { color: '#6c7086', fontSize: 11 },
 
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
