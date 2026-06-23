@@ -208,7 +208,14 @@ function CreateAdventureModal({ visible, onClose, onCreated, userId }) {
       const adv = await createAdventure({ userId, title, defaultSkipDays: skipDays });
       onCreated(adv);
     } catch (e) {
-      setError('Não foi possível criar a aventura.');
+      const msg = e?.message || JSON.stringify(e);
+      if (msg.includes('relation') && msg.includes('does not exist')) {
+        setError('Tabelas de aventuras não existem no Supabase ainda — aplique a migration 003.');
+      } else if (msg.includes('policy') || msg.includes('row-level security') || msg.includes('RLS')) {
+        setError('Bloqueado pelo RLS do Supabase. Verifique se a migration 003 foi aplicada.');
+      } else {
+        setError(`Erro: ${msg}`);
+      }
     } finally {
       setBusy(false);
     }
