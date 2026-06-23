@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import { TRAILS_PROFISSOES, TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
 import { raceTrailDiscountedCost } from '../data/racesData';
+import { ITEMS_BY_SUB } from '../data/professionItemsData';
 
 const CATEGORY_TABS = [
   { key: 'profissoes', label: 'Profissões', color: '#fab387', trails: TRAILS_PROFISSOES },
@@ -240,25 +241,52 @@ function SkillDetailModal({ detail, onClose }) {
             <Text style={styles.modalDesc}>{skill.descricao}</Text>
           ) : null}
           <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-            {Object.entries(skill.niveis).sort(([a],[b]) => +a - +b).map(([lvl, data]) => (
-              <View key={lvl} style={[
-                styles.nivelBlock,
-                parseInt(lvl) <= curLevel && styles.nivelBlockLearned,
-              ]}>
-                <Text style={[
-                  styles.nivelLabel,
-                  parseInt(lvl) <= curLevel && styles.nivelLabelLearned,
+            {Object.entries(skill.niveis).sort(([a],[b]) => +a - +b).map(([lvl, data]) => {
+              const lvlNum = parseInt(lvl);
+              const learned = lvlNum <= curLevel;
+              const items = (ITEMS_BY_SUB[(skill.nome || '').toLowerCase()] ?? [])
+                .filter(it => it.nivel === lvlNum);
+              return (
+                <View key={lvl} style={[
+                  styles.nivelBlock,
+                  learned && styles.nivelBlockLearned,
                 ]}>
-                  Nível {lvl}
-                  {parseInt(lvl) > curLevel && trailCost > 0 && (
-                    <Text style={styles.nivelCost}>
-                      {' '}· {xpCostForRange(parseInt(lvl)-1, parseInt(lvl), trailCost)} XP
-                    </Text>
+                  <Text style={[
+                    styles.nivelLabel,
+                    learned && styles.nivelLabelLearned,
+                  ]}>
+                    Nível {lvl}
+                    {!learned && trailCost > 0 && (
+                      <Text style={styles.nivelCost}>
+                        {' '}· {xpCostForRange(lvlNum-1, lvlNum, trailCost)} XP
+                      </Text>
+                    )}
+                  </Text>
+                  {renderNivelContent(data)}
+                  {items.length > 0 && (
+                    <View style={styles.itemsBlock}>
+                      <Text style={styles.itemsBlockTitle}>📋 Itens deste nível</Text>
+                      {items.map(it => (
+                        <View key={it.id} style={styles.itemRow}>
+                          <View style={styles.itemRowHeader}>
+                            <Text style={styles.itemRowName}>
+                              {it.narrativo ? '★ ' : ''}{it.nome}
+                            </Text>
+                            <Text style={styles.itemRowPrice}>🪙 {it.valor}</Text>
+                          </View>
+                          {it.ingredientes && (
+                            <Text style={styles.itemRowIngr}>📦 {it.ingredientes}</Text>
+                          )}
+                          {it.descricao && (
+                            <Text style={styles.itemRowDesc}>{it.descricao}</Text>
+                          )}
+                        </View>
+                      ))}
+                    </View>
                   )}
-                </Text>
-                {renderNivelContent(data)}
-              </View>
-            ))}
+                </View>
+              );
+            })}
           </ScrollView>
           {curLevel > 0 && (
             <TouchableOpacity style={styles.unlearnBtn} onPress={handleUnlearn}>
@@ -462,6 +490,15 @@ const styles = StyleSheet.create({
   nivelLabelLearned: { color: '#89b4fa' },
   nivelCost:         { color: '#94e2d5', fontWeight: '400' },
   nivelLine:         { color: '#cdd6f4', fontSize: 12, lineHeight: 18 },
+
+  itemsBlock: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#2e2e4e', gap: 6 },
+  itemsBlockTitle: { color: '#fab387', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  itemRow: { backgroundColor: '#11111b', borderRadius: 8, padding: 8, gap: 3, borderWidth: 1, borderColor: '#2e2e4e' },
+  itemRowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  itemRowName: { color: '#cdd6f4', fontSize: 12, fontWeight: '700', flex: 1 },
+  itemRowPrice: { color: '#f9e2af', fontSize: 12, fontWeight: '700' },
+  itemRowIngr: { color: '#fab387', fontSize: 11 },
+  itemRowDesc: { color: '#a6adc8', fontSize: 11, lineHeight: 15 },
   modalClose: {
     marginTop: 12, backgroundColor: '#313244', borderRadius: 10,
     paddingVertical: 12, alignItems: 'center',
