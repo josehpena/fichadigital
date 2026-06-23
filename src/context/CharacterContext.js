@@ -895,6 +895,24 @@ function reducer(state, action) {
       };
     }
 
+    // { titleId, boundSkills } — re-vincula habilidades a um título já adquirido.
+    // Usado quando o título foi adquirido sem binding ou para trocar a maestria
+    // escolhida (ex: trocar a maestria do +4 do Aprendiz de Conjurador).
+    case 'REBIND_TITLE_SKILLS': {
+      if (!(state.titles?.acquired ?? []).includes(action.titleId)) return state;
+      const oldBindings = state.titles?.bindings ?? {};
+      const newBindings = { ...oldBindings };
+      if (action.boundSkills?.length > 0) {
+        newBindings[action.titleId] = action.boundSkills;
+      } else {
+        delete newBindings[action.titleId];
+      }
+      return {
+        ...state,
+        titles: { ...state.titles, bindings: newBindings },
+      };
+    }
+
     // ── Inventário ────────────────────────────────────────────────────────────
 
     // { section: 'bolsa'|'cinto', index, field: 'nome'|'obs', value }
@@ -987,6 +1005,27 @@ function reducer(state, action) {
     case 'INVENTORY_CHANGE_MOEDAS': {
       const novas = Math.max(0, (state.inventory.moedas || 0) + action.delta);
       return { ...state, inventory: { ...state.inventory, moedas: novas } };
+    }
+
+    // { nome, obs, price } — compra na loja: encontra slot vazio na bolsa,
+    // grava o item e desconta as moedas. Falha silenciosa se cheio ou sem moedas.
+    case 'INVENTORY_BUY_ITEM': {
+      const { bolsa, moedas } = state.inventory;
+      if ((moedas || 0) < action.price) return state;
+      const idx = bolsa.itens.findIndex(
+        (it, i) => i < bolsa.capacidade && !it?.nome
+      );
+      if (idx < 0) return state;
+      const newItens = [...bolsa.itens];
+      newItens[idx] = { nome: action.nome, obs: action.obs || '' };
+      return {
+        ...state,
+        inventory: {
+          ...state.inventory,
+          moedas: (moedas || 0) - action.price,
+          bolsa: { ...bolsa, itens: newItens },
+        },
+      };
     }
 
     // { entry: { categoria, titulo, conteudo, tags?, status? } }
