@@ -895,6 +895,24 @@ function reducer(state, action) {
       };
     }
 
+    // { titleId, boundSkills } — re-vincula habilidades a um título já adquirido.
+    // Usado quando o título foi adquirido sem binding ou para trocar a maestria
+    // escolhida (ex: trocar a maestria do +4 do Aprendiz de Conjurador).
+    case 'REBIND_TITLE_SKILLS': {
+      if (!(state.titles?.acquired ?? []).includes(action.titleId)) return state;
+      const oldBindings = state.titles?.bindings ?? {};
+      const newBindings = { ...oldBindings };
+      if (action.boundSkills?.length > 0) {
+        newBindings[action.titleId] = action.boundSkills;
+      } else {
+        delete newBindings[action.titleId];
+      }
+      return {
+        ...state,
+        titles: { ...state.titles, bindings: newBindings },
+      };
+    }
+
     // ── Inventário ────────────────────────────────────────────────────────────
 
     // { section: 'bolsa'|'cinto', index, field: 'nome'|'obs', value }

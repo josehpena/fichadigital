@@ -26,10 +26,12 @@ const TIER_LABEL = { 1: 'Nível 1', 2: 'Nível 2', 3: 'Nível 3', 4: 'Nível 4' 
 
 // ── Binding helpers ───────────────────────────────────────────────────────────
 
-function getBindableSkills(req, acquiredTrails, bindings) {
-  const allBound = new Set(
-    Object.values(bindings ?? {}).flat().map(b => `${b.trailId}:${b.skillId}`)
-  );
+function getBindableSkills(req, acquiredTrails, bindings, excludeTitleId = null) {
+  const allBound = new Set();
+  for (const [tid, list] of Object.entries(bindings ?? {})) {
+    if (tid === excludeTitleId) continue; // ignora as próprias bindings ao revincular
+    for (const b of list) allBound.add(`${b.trailId}:${b.skillId}`);
+  }
   const pool = FONTE_TRAILS[req.fonte] ?? [];
   const byCategory = {};
   for (const trail of pool) {
@@ -64,15 +66,15 @@ function hasEnoughBindable(req, acquiredTrails, bindings) {
 
 // ── Skill Binding Modal ───────────────────────────────────────────────────────
 
-function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, onConfirm, onCancel }) {
+function SkillBindingModal({ visible, title, acquiredTrails, bindings, excludeTitleId, color, onConfirm, onCancel }) {
   const insets = useSafeAreaInsets();
   const req = title?.requisitoHabilidades;
   const [selected, setSelected] = useState([]);   // [{trailId,skillId,nome}]
   const [lockedCat, setLockedCat] = useState(null);
 
   const byCategory = useMemo(
-    () => req ? getBindableSkills(req, acquiredTrails, bindings) : {},
-    [req, acquiredTrails, bindings]
+    () => req ? getBindableSkills(req, acquiredTrails, bindings, excludeTitleId) : {},
+    [req, acquiredTrails, bindings, excludeTitleId]
   );
 
   if (!req || !title) return null;
@@ -185,7 +187,7 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
 function TitleCard({ title, color }) {
   const { character, dispatch } = useCharacter();
   const [expanded, setExpanded] = useState(false);
-  const [showBinding, setShowBinding] = useState(false);
+  const [bindingMode, setBindingMode] = useState(null); // null | 'acquire' | 'rebind'
 
   const acquired   = character.titles?.acquired?.includes(title.id) ?? false;
   const prereqIds  = TITLE_PREREQS[title.id] ?? [];
@@ -200,18 +202,33 @@ function TitleCard({ title, color }) {
   const unlocksNames = (TITLE_UNLOCKS[title.id] ?? []).map(id => TITLE_BY_ID[id]?.nome).filter(Boolean);
   const prereqNames  = prereqIds.map(id => TITLE_BY_ID[id]?.nome).filter(Boolean);
   const boundSkills  = character.titles?.bindings?.[title.id] ?? [];
+  // Título adquirido com requisito mas sem habilidades vinculadas — pode revincular
+  const canRebind     = acquired && !!req;
+  const missingBinding = canRebind && boundSkills.length === 0;
 
-  const handleAcquire = () => req ? setShowBinding(true) : dispatch({ type: 'ACQUIRE_TITLE', titleId: title.id });
+  const handleAcquire = () => req ? setBindingMode('acquire') : dispatch({ type: 'ACQUIRE_TITLE', titleId: title.id });
+  const handleRebind  = () => setBindingMode('rebind');
 
   const acquireBtnLabel = !canAcquire
     ? (!prereqsMet ? 'Requer título anterior' : 'Habilidades insuficientes')
     : req ? 'Selecionar Habilidades...' : 'Adquirir Título';
 
   return (
-    <View style={[styles.card, acquired && { borderLeftColor: color }]}>
-      <TouchableOpacity style={styles.cardHeader} onPress={() => setExpanded(v => !v)} activeOpacity={0.7}>
+    <View style={[
+      styles.card,
+      acquired && { borderLeftColor: color },
+      missingBinding && { borderLeftColor: '#f9e2af' },
+    ]}>
+      <TouchableOpacity
+        style={styles.cardHeader}
+        onPress={() => setExpanded(v => !v)}
+        onLongPress={canRebind ? handleRebind : undefined}
+        delayLongPress={400}
+        activeOpacity={0.7}
+      >
         <View style={[styles.cardDot, { backgroundColor: acquired ? color : '#45475a' }]} />
         <Text style={[styles.cardName, acquired && { color }]}>{title.nome}</Text>
+        {missingBinding && <Text style={styles.bindingWarn}>⚠️ sem maestria</Text>}
         {acquired && <Text style={[styles.acquiredBadge, { color }]}>✓</Text>}
         <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
       </TouchableOpacity>
@@ -258,6 +275,17 @@ function TitleCard({ title, color }) {
             </View>
           )}
 
+          {canRebind && (
+            <TouchableOpacity
+              style={[styles.rebindBtn, missingBinding && styles.rebindBtnWarn]}
+              onPress={handleRebind}
+            >
+              <Text style={[styles.rebindBtnText, missingBinding && styles.rebindBtnTextWarn]}>
+                {missingBinding ? 'Vincular Habilidades…' : 'Trocar Habilidades…'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {!acquired && (
             <TouchableOpacity
               style={[styles.acquireBtn, !canAcquire && styles.acquireBtnOff]}
@@ -273,13 +301,22 @@ function TitleCard({ title, color }) {
       )}
 
       <SkillBindingModal
-        visible={showBinding}
+        visible={!!bindingMode}
         title={title}
         acquiredTrails={character.skillTree.acquiredTrails}
         bindings={character.titles?.bindings ?? {}}
+        excludeTitleId={bindingMode === 'rebind' ? title.id : null}
         color={color}
-        onConfirm={skills => { setShowBinding(false); dispatch({ type: 'ACQUIRE_TITLE', titleId: title.id, boundSkills: skills }); }}
-        onCancel={() => setShowBinding(false)}
+        onConfirm={skills => {
+          const mode = bindingMode;
+          setBindingMode(null);
+          if (mode === 'rebind') {
+            dispatch({ type: 'REBIND_TITLE_SKILLS', titleId: title.id, boundSkills: skills });
+          } else {
+            dispatch({ type: 'ACQUIRE_TITLE', titleId: title.id, boundSkills: skills });
+          }
+        }}
+        onCancel={() => setBindingMode(null)}
       />
     </View>
   );
@@ -416,6 +453,11 @@ const styles = StyleSheet.create({
   acquireBtnOff: { backgroundColor: '#1e1e2e', borderColor: '#2e2e4e' },
   acquireBtnText: { color: '#89b4fa', fontSize: 13, fontWeight: '700' },
   acquireBtnTextOff: { color: '#3d3d5c' },
+  bindingWarn:       { color: '#f9e2af', fontSize: 10, fontWeight: '700', marginRight: 6 },
+  rebindBtn:         { marginTop: 6, backgroundColor: '#1e1e2e', borderRadius: 8, paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: '#45475a' },
+  rebindBtnWarn:     { borderColor: '#f9e2af', backgroundColor: '#3d2f1a' },
+  rebindBtnText:     { color: '#a6adc8', fontSize: 12, fontWeight: '600' },
+  rebindBtnTextWarn: { color: '#f9e2af', fontSize: 12, fontWeight: '700' },
 });
 
 const mStyles = StyleSheet.create({
