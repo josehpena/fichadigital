@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import {
-  ITEMS_BY_GROUP, PROFESSION_GROUPS, SHOP_NAMES,
+  ITEMS_BY_GROUP, PROFESSION_GROUPS, SHOP_NAMES, PROFESSION_ITEMS,
 } from '../data/professionItemsData';
 
 const TIPO_FILTERS = [
@@ -42,7 +42,7 @@ function shopNameFor(group) {
 export default function ShopModal({ visible, onClose }) {
   const insets = useSafeAreaInsets();
   const { character } = useCharacter();
-  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);   // { group, initialSearch }
 
   if (!visible) return null;
 
@@ -66,8 +66,12 @@ export default function ShopModal({ visible, onClose }) {
         </View>
 
         {selectedGroup
-          ? <ShopDetail group={selectedGroup} onClose={onClose} />
-          : <ShopList onSelect={setSelectedGroup} />
+          ? <ShopDetail
+              group={selectedGroup.group}
+              initialSearch={selectedGroup.initialSearch}
+              onClose={onClose}
+            />
+          : <ShopList onSelect={(group, initialSearch) => setSelectedGroup({ group, initialSearch: initialSearch ?? '' })} />
         }
       </View>
     </Modal>
@@ -76,39 +80,90 @@ export default function ShopModal({ visible, onClose }) {
 
 // ── Lista de lojas ───────────────────────────────────────────────────────────
 function ShopList({ onSelect }) {
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+
+  const results = useMemo(() => {
+    if (!q) return [];
+    return PROFESSION_ITEMS
+      .filter(it => it.nome.toLowerCase().includes(q))
+      .slice(0, 40);
+  }, [q]);
+
   return (
-    <ScrollView contentContainerStyle={s.listContent}>
-      <Text style={s.subtitle}>
-        Catálogo de referência. As compras precisam ser combinadas narrativamente com o mestre.
-      </Text>
-      {PROFESSION_GROUPS.map(g => {
-        const count = (ITEMS_BY_GROUP[g] ?? []).length;
-        return (
-          <TouchableOpacity
-            key={g}
-            style={s.shopCard}
-            onPress={() => onSelect(g)}
-            activeOpacity={0.8}
-          >
-            <Text style={s.shopIcon}>{GROUP_ICONS[g] ?? '🏪'}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.shopName}>{shopNameFor(g)}</Text>
-              <Text style={s.shopGroup}>{g}</Text>
-            </View>
-            <Text style={s.shopCount}>{count} itens</Text>
-            <Text style={s.shopChevron}>›</Text>
+    <ScrollView contentContainerStyle={s.listContent} keyboardShouldPersistTaps="handled">
+      <View style={s.searchRowList}>
+        <TextInput
+          style={[s.searchInput, { flex: 1 }]}
+          placeholder="Buscar item em todas as lojas..."
+          placeholderTextColor="#6c7086"
+          value={search}
+          onChangeText={setSearch}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')} style={s.searchClear}>
+            <Text style={s.searchClearText}>✕</Text>
           </TouchableOpacity>
-        );
-      })}
+        )}
+      </View>
+
+      {q ? (
+        results.length === 0 ? (
+          <Text style={s.empty}>Nenhum item encontrado.</Text>
+        ) : (
+          results.map(it => (
+            <TouchableOpacity
+              key={it.id}
+              style={s.searchResult}
+              onPress={() => onSelect(it.grupo, it.nome)}
+              activeOpacity={0.8}
+            >
+              <Text style={s.searchResultIcon}>{GROUP_ICONS[it.grupo] ?? '🏪'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.searchResultName}>
+                  {it.narrativo ? '★ ' : ''}{it.nome}
+                </Text>
+                <Text style={s.searchResultShop}>{shopNameFor(it.grupo)} · {it.tipo}</Text>
+              </View>
+              <Text style={s.itemPrice}>🪙 {it.valor}</Text>
+            </TouchableOpacity>
+          ))
+        )
+      ) : (
+        <>
+          <Text style={s.subtitle}>
+            Catálogo de referência. As compras precisam ser combinadas narrativamente com o mestre.
+          </Text>
+          {PROFESSION_GROUPS.map(g => {
+            const count = (ITEMS_BY_GROUP[g] ?? []).length;
+            return (
+              <TouchableOpacity
+                key={g}
+                style={s.shopCard}
+                onPress={() => onSelect(g)}
+                activeOpacity={0.8}
+              >
+                <Text style={s.shopIcon}>{GROUP_ICONS[g] ?? '🏪'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.shopName}>{shopNameFor(g)}</Text>
+                  <Text style={s.shopGroup}>{g}</Text>
+                </View>
+                <Text style={s.shopCount}>{count} itens</Text>
+                <Text style={s.shopChevron}>›</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </>
+      )}
     </ScrollView>
   );
 }
 
 // ── Detalhe de uma loja ──────────────────────────────────────────────────────
-function ShopDetail({ group, onClose }) {
+function ShopDetail({ group, initialSearch, onClose }) {
   const { character, dispatch } = useCharacter();
   const [filtro, setFiltro] = useState('todos');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch ?? '');
   const [buying, setBuying] = useState(null); // item sendo comprado
   const items = ITEMS_BY_GROUP[group] ?? [];
 
@@ -297,6 +352,21 @@ const s = StyleSheet.create({
 
   listContent: { padding: 16, gap: 10 },
   subtitle:    { color: '#6c7086', fontSize: 12, lineHeight: 18, marginBottom: 6 },
+
+  searchRowList: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchClear: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#313244', alignItems: 'center', justifyContent: 'center',
+  },
+  searchClearText: { color: '#cdd6f4', fontSize: 14 },
+  searchResult: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#1e1e2e', borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: '#2e2e4e',
+  },
+  searchResultIcon: { fontSize: 18 },
+  searchResultName: { color: '#cdd6f4', fontSize: 13, fontWeight: '700' },
+  searchResultShop: { color: '#6c7086', fontSize: 11, marginTop: 2 },
 
   shopCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
