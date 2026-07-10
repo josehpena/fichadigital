@@ -9,6 +9,7 @@ import {
 export default function SwipeTabs({ pages }) {
   const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
+  const [pagerHeight, setPagerHeight] = useState(0);
   const indexRef = useRef(0);
   const scrollRef = useRef(null);
 
@@ -59,12 +60,15 @@ export default function SwipeTabs({ pages }) {
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         style={styles.pager}
+        onLayout={(e) => setPagerHeight(e.nativeEvent.layout.height)}
       >
+        {/* Altura explícita nas páginas: sem ela, a página cresce com o conteúdo
+            e o ScrollView vertical interno nunca rola (conteúdo só é cortado). */}
         {pages.map((p) => {
           const Page = p.component;
           return (
-            <View key={p.key} style={{ width }}>
-              <Page />
+            <View key={p.key} style={{ width, height: pagerHeight || '100%' }}>
+              {pagerHeight > 0 && <Page />}
             </View>
           );
         })}
