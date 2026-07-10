@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { color: '#cdd6f4', fontSize: 18, fontWeight: 'bold', marginBottom: 6 },
   modalDesc:  { color: '#6c7086', fontSize: 12, marginBottom: 14, lineHeight: 18 },
-  modalScroll: { flexGrow: 0 },
+  modalScroll: { flexGrow: 0, flexShrink: 1 },
   nivelBlock: {
     backgroundColor: '#313244', borderRadius: 8, padding: 10, marginBottom: 8,
   },
