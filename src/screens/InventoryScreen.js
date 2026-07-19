@@ -127,6 +127,9 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
   // Seleção de slot para equipar
   const [showEquip, setShowEquip] = useState(false);
 
+  // Mover para outro armazenamento
+  const [showMove, setShowMove] = useState(false);
+
   function resetTiraForm() { setTiraKey(''); setTiraVal(1); setTiraTexto(''); }
 
   function addTira() {
@@ -149,7 +152,7 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
 
   useEffect(() => {
     if (!visible) return;
-    setShowEquip(false); resetTiraForm();
+    setShowEquip(false); setShowMove(false); resetTiraForm();
     setPFormKey(''); setPFormVal(1); setPFormTexto(''); setPFormOpen(false);
     if (isNew) {
       setStep('type'); setTipo('pocao');
@@ -264,6 +267,33 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
     dispatch(storageId
       ? { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', storageId, index, accIndex }
       : { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', section,   index, accIndex });
+    onClose();
+  }
+
+  // ── Mover item entre armazenamentos ──
+  const countFree = (container) => {
+    const cap = container.capacidade ?? 0;
+    let n = 0;
+    for (let i = 0; i < cap; i++) {
+      if (!container.itens?.[i]?.nome) n++;
+    }
+    return n;
+  };
+
+  const currentLoc = storageId ?? section;
+  const moveDestinos = [
+    { key: 'bolsa', label: '🎒 Bolsa', to: { section: 'bolsa' }, free: countFree(character.inventory?.bolsa ?? {}) },
+    ...((character.inventory?.storages ?? [])
+      .filter(s => s.tipo !== 'aljava')
+      .map(s => ({ key: s.id, label: `${s.icone} ${s.nome}`, to: { storageId: s.id }, free: countFree(s) }))),
+  ].filter(d => (d.to.storageId ?? d.to.section) !== currentLoc);
+
+  function moveTo(dest) {
+    dispatch({
+      type: 'INVENTORY_MOVE_ITEM',
+      from: storageId ? { storageId, index } : { section, index },
+      to: dest.to,
+    });
     onClose();
   }
 
@@ -713,6 +743,32 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                     </Text>
                   </TouchableOpacity>
                 ) : null
+              )}
+
+              {/* Mover para outro armazenamento */}
+              {!isNew && moveDestinos.length > 0 && (
+                <View style={styles.moveSection}>
+                  <TouchableOpacity style={styles.moveToggleBtn} onPress={() => setShowMove(v => !v)}>
+                    <Text style={styles.moveToggleText}>
+                      📦 Mover para outra bolsa {showMove ? '▲' : '▼'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showMove && moveDestinos.map(d => (
+                    <TouchableOpacity
+                      key={d.key}
+                      style={[styles.moveDestBtn, d.free === 0 && styles.moveDestBtnOff]}
+                      disabled={d.free === 0}
+                      onPress={() => moveTo(d)}
+                    >
+                      <Text style={[styles.moveDestText, d.free === 0 && styles.moveDestTextOff]}>
+                        {d.label}
+                      </Text>
+                      <Text style={styles.moveDestFree}>
+                        {d.free === 0 ? 'cheia' : `${d.free} ${d.free === 1 ? 'espaço' : 'espaços'}`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               )}
 
               {/* Ações */}
@@ -1721,6 +1777,23 @@ const styles = StyleSheet.create({
   stepperBtn:     { backgroundColor: '#313244', borderRadius: 6, width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   stepperBtnText: { color: '#cdd6f4', fontSize: 16, fontWeight: '700', lineHeight: 20 },
   stepperVal:     { color: '#cdd6f4', fontSize: 15, fontWeight: '700', minWidth: 24, textAlign: 'center' },
+
+  // Mover item
+  moveSection: { marginBottom: 6 },
+  moveToggleBtn: {
+    borderRadius: 8, borderWidth: 1, borderColor: '#313244', borderStyle: 'dashed',
+    paddingVertical: 9, alignItems: 'center', marginBottom: 6,
+  },
+  moveToggleText: { color: '#89b4fa', fontSize: 12, fontWeight: '700' },
+  moveDestBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#181825', borderRadius: 8, borderWidth: 1, borderColor: '#313244',
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6,
+  },
+  moveDestBtnOff:   { opacity: 0.45 },
+  moveDestText:     { color: '#cdd6f4', fontSize: 13, fontWeight: '600' },
+  moveDestTextOff:  { color: '#6c7086' },
+  moveDestFree:     { color: '#6c7086', fontSize: 11 },
 
   // Ações
   itemModalActions:{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 8 },

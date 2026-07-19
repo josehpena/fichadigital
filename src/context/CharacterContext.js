@@ -1011,6 +1011,56 @@ function reducer(state, action) {
       return { ...state, inventory: { ...state.inventory, storages } };
     }
 
+    // { from: { section?|storageId?, index }, to: { section?|storageId? } }
+    // Move um item para o primeiro slot livre do destino (bolsa ou armazenamento padrão)
+    case 'INVENTORY_MOVE_ITEM': {
+      const inv = state.inventory;
+      const readLoc = (loc) => {
+        if (loc.storageId) {
+          const st = (inv.storages ?? []).find(s => s.id === loc.storageId);
+          return st ? { itens: st.itens ?? [], cap: st.capacidade ?? 0 } : null;
+        }
+        const sec = inv[loc.section];
+        return sec ? { itens: sec.itens ?? [], cap: sec.capacidade ?? (sec.itens?.length ?? 0) } : null;
+      };
+      const src = readLoc(action.from);
+      const dst = readLoc(action.to);
+      if (!src || !dst) return state;
+
+      const item = src.itens[action.from.index];
+      if (!item?.nome) return state;
+
+      let free = -1;
+      for (let i = 0; i < dst.cap; i++) {
+        if (!dst.itens[i]?.nome) { free = i; break; }
+      }
+      if (free < 0) return state; // destino cheio
+
+      const emptyItem = { nome: '', obs: '' };
+      const writeLoc = (invAcc, loc, itens) => {
+        if (loc.storageId) {
+          return { ...invAcc, storages: (invAcc.storages ?? []).map(s => s.id === loc.storageId ? { ...s, itens } : s) };
+        }
+        return { ...invAcc, [loc.section]: { ...invAcc[loc.section], itens } };
+      };
+
+      const sameContainer = (action.from.storageId ?? action.from.section) === (action.to.storageId ?? action.to.section);
+      let newInv;
+      if (sameContainer) {
+        const itens = [...src.itens];
+        itens[free] = { ...item };
+        itens[action.from.index] = emptyItem;
+        newInv = writeLoc(inv, action.from, itens);
+      } else {
+        const srcItens = [...src.itens];
+        srcItens[action.from.index] = emptyItem;
+        const dstItens = [...dst.itens];
+        dstItens[free] = { ...item };
+        newInv = writeLoc(writeLoc(inv, action.from, srcItens), action.to, dstItens);
+      }
+      return { ...state, inventory: newInv };
+    }
+
     // ── Aljava (munições) ─────────────────────────────────────────────────────
 
     // { storageId, municao: { nome, nivel, quantidade, efeito, venenoSlots } }
