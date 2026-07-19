@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import {
-  PROFESSION_ITEMS, USE_CATEGORIES, SHOP_NAMES,
+  PROFESSION_ITEMS, PROFESSION_GROUPS, SHOP_NAMES,
 } from '../data/professionItemsData';
 
 const GROUP_ICONS = {
@@ -47,11 +47,21 @@ function shopNameFor(group) {
   return SHOP_NAMES[group] || `Loja de ${group.charAt(0) + group.slice(1).toLowerCase()}`;
 }
 
+// 'GRÃO MESTRE DOS TALHERES' → 'Grão Mestre dos Talheres'
+function professionLabel(group) {
+  const minor = ['da', 'de', 'do', 'das', 'dos', 'e'];
+  return group
+    .toLowerCase()
+    .split(' ')
+    .map((w, i) => (i > 0 && minor.includes(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
 export default function ShopModal({ visible, onClose }) {
   const insets = useSafeAreaInsets();
   const { character, dispatch } = useCharacter();
   const [search, setSearch]     = useState('');
-  const [categoria, setCategoria] = useState('todos');
+  const [grupo, setGrupo]       = useState('todos');
   const [buying, setBuying]     = useState(null);
 
   const moedas = character.inventory?.moedas ?? 0;
@@ -71,9 +81,9 @@ export default function ShopModal({ visible, onClose }) {
   const q = search.trim().toLowerCase();
   const filtered = useMemo(() => (
     PROFESSION_ITEMS
-      .filter(it => categoria === 'todos' || it.categoria === categoria)
+      .filter(it => grupo === 'todos' || it.grupo === grupo)
       .filter(it => !q || it.nome.toLowerCase().includes(q))
-  ), [categoria, q]);
+  ), [grupo, q]);
 
   if (!visible) return null;
 
@@ -126,25 +136,25 @@ export default function ShopModal({ visible, onClose }) {
           )}
         </View>
 
-        {/* Filtro de categoria (chips horizontais) */}
+        {/* Filtro por profissão (chips horizontais) */}
         <View style={s.catBar}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.catRow}>
             <TouchableOpacity
-              style={[s.catChip, categoria === 'todos' && s.catChipActive]}
-              onPress={() => setCategoria('todos')}
+              style={[s.catChip, grupo === 'todos' && s.catChipActive]}
+              onPress={() => setGrupo('todos')}
             >
-              <Text style={[s.catChipText, categoria === 'todos' && s.catChipTextActive]}>
+              <Text style={[s.catChipText, grupo === 'todos' && s.catChipTextActive]}>
                 Todos ({PROFESSION_ITEMS.length})
               </Text>
             </TouchableOpacity>
-            {USE_CATEGORIES.map(cat => (
+            {PROFESSION_GROUPS.map(g => (
               <TouchableOpacity
-                key={cat}
-                style={[s.catChip, categoria === cat && s.catChipActive]}
-                onPress={() => setCategoria(categoria === cat ? 'todos' : cat)}
+                key={g}
+                style={[s.catChip, grupo === g && s.catChipActive]}
+                onPress={() => setGrupo(grupo === g ? 'todos' : g)}
               >
-                <Text style={[s.catChipText, categoria === cat && s.catChipTextActive]}>
-                  {CATEGORY_ICONS[cat] ?? ''} {cat}
+                <Text style={[s.catChipText, grupo === g && s.catChipTextActive]}>
+                  {GROUP_ICONS[g] ?? '🏪'} {professionLabel(g)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -160,7 +170,7 @@ export default function ShopModal({ visible, onClose }) {
           ListHeaderComponent={
             <Text style={s.resultCount}>
               {filtered.length} {filtered.length === 1 ? 'item' : 'itens'}
-              {categoria !== 'todos' ? ` em ${categoria}` : ''}
+              {grupo !== 'todos' ? ` de ${professionLabel(grupo)}` : ''}
             </Text>
           }
           ListEmptyComponent={<Text style={s.empty}>Nenhum item encontrado.</Text>}
