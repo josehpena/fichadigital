@@ -203,6 +203,7 @@ function MiraPanel({ damageTypes }) {
 }
 
 
+const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
 const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
 const DEFAULT_DURACAO     = {
   1: '1 cena / 3 turnos',
