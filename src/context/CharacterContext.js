@@ -939,17 +939,24 @@ function reducer(state, action) {
       return { ...state, inventory: { ...state.inventory, bolsa: { ...bolsa, capacidade: bolsa.capacidade - 1 } } };
     }
 
-    // { nome, icone, capacidade }
+    // { nome, icone, capacidade, tipo? } — tipo 'aljava' cria armazenamento de munições
     case 'INVENTORY_ADD_STORAGE': {
       const id = `storage_${Date.now()}`;
-      const cap = action.capacidade ?? 6;
-      const newStorage = {
-        id,
-        nome: action.nome ?? 'Armazenamento',
-        icone: action.icone ?? '📦',
-        capacidade: cap,
-        itens: Array.from({ length: 40 }, () => ({ nome: '', obs: '' })),
-      };
+      const newStorage = action.tipo === 'aljava'
+        ? {
+            id,
+            nome: action.nome ?? 'Aljava',
+            icone: action.icone ?? '🏹',
+            tipo: 'aljava',
+            municoes: [], // [{ id, nome, nivel, quantidade, efeito, venenoSlots: [{nome, efeito}|null] }]
+          }
+        : {
+            id,
+            nome: action.nome ?? 'Armazenamento',
+            icone: action.icone ?? '📦',
+            capacidade: action.capacidade ?? 6,
+            itens: Array.from({ length: 40 }, () => ({ nome: '', obs: '' })),
+          };
       const storages = [...(state.inventory.storages ?? []), newStorage];
       return { ...state, inventory: { ...state.inventory, storages } };
     }
@@ -992,6 +999,57 @@ function reducer(state, action) {
         const newItens = [...s.itens];
         newItens[action.index] = { ...newItens[action.index], [action.field]: action.value };
         return { ...s, itens: newItens };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // ── Aljava (munições) ─────────────────────────────────────────────────────
+
+    // { storageId, municao: { nome, nivel, quantidade, efeito, venenoSlots } }
+    case 'ALJAVA_ADD_MUNICAO': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const municao = {
+          id: `mun_${Date.now()}`,
+          nome: 'Munição', nivel: 1, quantidade: 0, efeito: '', venenoSlots: [],
+          ...action.municao,
+        };
+        return { ...s, municoes: [...(s.municoes ?? []), municao] };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, municaoId, changes }
+    case 'ALJAVA_UPDATE_MUNICAO': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const municoes = (s.municoes ?? []).map(m =>
+          m.id === action.municaoId ? { ...m, ...action.changes } : m
+        );
+        return { ...s, municoes };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, municaoId }
+    case 'ALJAVA_REMOVE_MUNICAO': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        return { ...s, municoes: (s.municoes ?? []).filter(m => m.id !== action.municaoId) };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, municaoId, delta }
+    case 'ALJAVA_CHANGE_QTY': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const municoes = (s.municoes ?? []).map(m =>
+          m.id === action.municaoId
+            ? { ...m, quantidade: Math.max(0, (m.quantidade || 0) + action.delta) }
+            : m
+        );
+        return { ...s, municoes };
       });
       return { ...state, inventory: { ...state.inventory, storages } };
     }
