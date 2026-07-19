@@ -1028,7 +1028,7 @@ function StorageSection({ storage, dispatch }) {
 
 // ── Aljava (munições) ─────────────────────────────────────────────────────────
 
-function MunicaoModal({ visible, municao, onSave, onDelete, onClose }) {
+function MunicaoModal({ visible, municao, maxQtd, onSave, onDelete, onClose }) {
   const isNew = !municao;
   const [nome, setNome]     = useState('');
   const [nivel, setNivel]   = useState(1);
@@ -1040,7 +1040,7 @@ function MunicaoModal({ visible, municao, onSave, onDelete, onClose }) {
     if (visible) {
       setNome(municao?.nome ?? '');
       setNivel(municao?.nivel ?? 1);
-      setQtd(municao?.quantidade ?? 1);
+      setQtd(municao ? (municao.quantidade ?? 0) : Math.min(1, maxQtd));
       setEfeito(municao?.efeito ?? '');
       setSlots(municao?.venenoSlots ?? []);
     }
@@ -1075,7 +1075,11 @@ function MunicaoModal({ visible, municao, onSave, onDelete, onClose }) {
           />
 
           <NumStepper label="Nível" value={nivel} onChange={setNivel} min={1} />
-          <NumStepper label="Quantidade" value={qtd} onChange={setQtd} />
+          <NumStepper
+            label={`Quantidade (máx ${maxQtd})`}
+            value={qtd}
+            onChange={(v) => setQtd(Math.min(v, maxQtd))}
+          />
           <NumStepper
             label="Slots de veneno"
             value={slots.length}
@@ -1193,6 +1197,16 @@ function AljavaSection({ storage, dispatch }) {
 
   const municoes = storage.municoes ?? [];
   const totalMun = municoes.reduce((sum, m) => sum + (m.quantidade || 0), 0);
+  const cap      = storage.capacidade ?? 20;
+  const cheia    = totalMun >= cap;
+
+  function changeCapacity(delta) {
+    if (delta < 0 && cap - 1 < totalMun) {
+      Alert.alert('Aljava cheia', 'Remova munições antes de diminuir a capacidade.');
+      return;
+    }
+    dispatch({ type: 'INVENTORY_SET_STORAGE_CAPACITY', storageId: storage.id, delta });
+  }
 
   function saveEdit() {
     dispatch({ type: 'INVENTORY_RENAME_STORAGE', storageId: storage.id, nome: editNome, icone: editIcone });
@@ -1244,7 +1258,15 @@ function AljavaSection({ storage, dispatch }) {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{storage.icone} {storage.nome}</Text>
           <View style={styles.sectionRight}>
-            <Text style={styles.capacityText}>{totalMun} munições</Text>
+            <Text style={[styles.capacityText, cheia && styles.capacityTextFull]}>
+              {totalMun}/{cap} munições
+            </Text>
+            <TouchableOpacity style={styles.smallBtn} onPress={() => changeCapacity(-1)}>
+              <Text style={styles.smallBtnText}>−</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.smallBtn} onPress={() => changeCapacity(1)}>
+              <Text style={styles.smallBtnText}>+</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.editBtn} onPress={() => { setEditNome(storage.nome); setEditIcone(storage.icone); setEditing(true); }}>
               <Text style={styles.editBtnText}>✏️</Text>
             </TouchableOpacity>
@@ -1279,10 +1301,11 @@ function AljavaSection({ storage, dispatch }) {
                 {m.quantidade || 0}
               </Text>
               <TouchableOpacity
-                style={styles.munQtyBtn}
+                style={[styles.munQtyBtn, cheia && styles.munQtyBtnOff]}
+                disabled={cheia}
                 onPress={() => dispatch({ type: 'ALJAVA_CHANGE_QTY', storageId: storage.id, municaoId: m.id, delta: 1 })}
               >
-                <Text style={styles.munQtyBtnText}>+</Text>
+                <Text style={[styles.munQtyBtnText, cheia && styles.munQtyBtnTextOff]}>+</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1317,6 +1340,7 @@ function AljavaSection({ storage, dispatch }) {
       <MunicaoModal
         visible={!!munModal}
         municao={munModal?.municao ?? null}
+        maxQtd={Math.max(0, cap - totalMun + (munModal?.municao?.quantidade || 0))}
         onSave={(data) => {
           if (munModal?.municao) {
             updateMunicao(munModal.municao.id, data);
@@ -1366,10 +1390,14 @@ function NewStorageModal({ visible, onClose, dispatch }) {
     setTipo(t);
     if (t === 'aljava' && icone === '📦') setIcone('🏹');
     if (t === 'padrao' && icone === '🏹') setIcone('📦');
+    if (t === 'aljava' && cap === '6')  setCap('20');
+    if (t === 'padrao' && cap === '20') setCap('6');
   }
 
   function handleCreate() {
-    const capacidade = Math.max(1, Math.min(40, parseInt(cap, 10) || 6));
+    const capacidade = tipo === 'aljava'
+      ? Math.max(1, Math.min(99, parseInt(cap, 10) || 20))
+      : Math.max(1, Math.min(40, parseInt(cap, 10) || 6));
     dispatch({
       type: 'INVENTORY_ADD_STORAGE',
       nome: nome.trim() || (tipo === 'aljava' ? 'Aljava' : 'Armazenamento'),
@@ -1404,7 +1432,7 @@ function NewStorageModal({ visible, onClose, dispatch }) {
           </View>
           {tipo === 'aljava' && (
             <Text style={styles.tipoHint}>
-              Guarda munições com nível, efeito, quantidade e slots de veneno.
+              Guarda munições com nível, efeito, quantidade e slots de veneno. A capacidade limita o total de unidades.
             </Text>
           )}
 
@@ -1431,19 +1459,17 @@ function NewStorageModal({ visible, onClose, dispatch }) {
             autoFocus
           />
 
-          {tipo !== 'aljava' && (
-            <>
-              <Text style={styles.modalLabel}>Capacidade inicial</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={cap}
-                onChangeText={setCap}
-                keyboardType="number-pad"
-                placeholder="6"
-                placeholderTextColor="#45475a"
-              />
-            </>
-          )}
+          <Text style={styles.modalLabel}>
+            {tipo === 'aljava' ? 'Capacidade (total de munições)' : 'Capacidade inicial'}
+          </Text>
+          <TextInput
+            style={styles.modalInput}
+            value={cap}
+            onChangeText={setCap}
+            keyboardType="number-pad"
+            placeholder={tipo === 'aljava' ? '20' : '6'}
+            placeholderTextColor="#45475a"
+          />
 
           <View style={styles.modalBtns}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
@@ -1779,8 +1805,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   munQtyBtnText: { color: '#cdd6f4', fontSize: 18, fontWeight: '700', lineHeight: 22 },
+  munQtyBtnOff:  { opacity: 0.35 },
+  munQtyBtnTextOff: { color: '#6c7086' },
   munQty:        { color: '#f9e2af', fontSize: 18, fontWeight: 'bold', minWidth: 28, textAlign: 'center' },
   munQtyZero:    { color: '#f38ba8' },
+  capacityTextFull: { color: '#f38ba8', fontWeight: '700' },
 
   venenoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   venenoChip: {

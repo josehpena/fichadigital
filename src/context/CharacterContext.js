@@ -948,6 +948,7 @@ function reducer(state, action) {
             nome: action.nome ?? 'Aljava',
             icone: action.icone ?? '🏹',
             tipo: 'aljava',
+            capacidade: action.capacidade ?? 20, // máximo de unidades somando todas as munições
             municoes: [], // [{ id, nome, nivel, quantidade, efeito, venenoSlots: [{nome, efeito}|null] }]
           }
         : {
@@ -984,6 +985,13 @@ function reducer(state, action) {
     case 'INVENTORY_SET_STORAGE_CAPACITY': {
       const storages = (state.inventory.storages ?? []).map(s => {
         if (s.id !== action.storageId) return s;
+        if (s.tipo === 'aljava') {
+          // Capacidade em unidades de munição; não reduz abaixo do total atual
+          const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
+          const cap = Math.max(1, Math.min(99, (s.capacidade ?? 20) + action.delta));
+          if (action.delta < 0 && cap < total) return s;
+          return { ...s, capacidade: cap };
+        }
         const cap = Math.max(1, Math.min(40, s.capacidade + action.delta));
         // Se está diminuindo, bloqueia se o último slot estiver ocupado
         if (action.delta < 0 && s.itens[s.capacidade - 1]?.nome) return s;
@@ -1009,11 +1017,15 @@ function reducer(state, action) {
     case 'ALJAVA_ADD_MUNICAO': {
       const storages = (state.inventory.storages ?? []).map(s => {
         if (s.id !== action.storageId) return s;
+        const cap   = s.capacidade ?? 20;
+        const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
         const municao = {
           id: `mun_${Date.now()}`,
           nome: 'Munição', nivel: 1, quantidade: 0, efeito: '', venenoSlots: [],
           ...action.municao,
         };
+        // Quantidade limitada ao espaço livre da aljava
+        municao.quantidade = Math.max(0, Math.min(municao.quantidade || 0, cap - total));
         return { ...s, municoes: [...(s.municoes ?? []), municao] };
       });
       return { ...state, inventory: { ...state.inventory, storages } };
@@ -1023,9 +1035,18 @@ function reducer(state, action) {
     case 'ALJAVA_UPDATE_MUNICAO': {
       const storages = (state.inventory.storages ?? []).map(s => {
         if (s.id !== action.storageId) return s;
-        const municoes = (s.municoes ?? []).map(m =>
-          m.id === action.municaoId ? { ...m, ...action.changes } : m
-        );
+        const cap   = s.capacidade ?? 20;
+        const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
+        const municoes = (s.municoes ?? []).map(m => {
+          if (m.id !== action.municaoId) return m;
+          const next = { ...m, ...action.changes };
+          if (action.changes.quantidade !== undefined) {
+            // Espaço livre desconsiderando a própria munição
+            const maxQtd = Math.max(0, cap - (total - (m.quantidade || 0)));
+            next.quantidade = Math.max(0, Math.min(next.quantidade || 0, maxQtd));
+          }
+          return next;
+        });
         return { ...s, municoes };
       });
       return { ...state, inventory: { ...state.inventory, storages } };
@@ -1044,11 +1065,16 @@ function reducer(state, action) {
     case 'ALJAVA_CHANGE_QTY': {
       const storages = (state.inventory.storages ?? []).map(s => {
         if (s.id !== action.storageId) return s;
-        const municoes = (s.municoes ?? []).map(m =>
-          m.id === action.municaoId
-            ? { ...m, quantidade: Math.max(0, (m.quantidade || 0) + action.delta) }
-            : m
-        );
+        const cap   = s.capacidade ?? 20;
+        const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
+        const livre = Math.max(0, cap - total);
+        const municoes = (s.municoes ?? []).map(m => {
+          if (m.id !== action.municaoId) return m;
+          let q = Math.max(0, (m.quantidade || 0) + action.delta);
+          // Aumentos limitados ao espaço livre da aljava
+          if (action.delta > 0) q = Math.min(q, (m.quantidade || 0) + livre);
+          return { ...m, quantidade: q };
+        });
         return { ...s, municoes };
       });
       return { ...state, inventory: { ...state.inventory, storages } };
