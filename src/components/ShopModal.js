@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import {
-  PROFESSION_ITEMS, PROFESSION_GROUPS, SHOP_NAMES,
+  PROFESSION_ITEMS, MAIN_PROFESSION_GROUPS, GROUP_PARENT, SHOP_NAMES,
 } from '../data/professionItemsData';
 
 const GROUP_ICONS = {
@@ -47,6 +47,11 @@ function shopNameFor(group) {
   return SHOP_NAMES[group] || `Loja de ${group.charAt(0) + group.slice(1).toLowerCase()}`;
 }
 
+// Profissão principal do grupo (Xamã → Sábio do Caldeirão, Ferreiro → Roedor de Minérios...)
+function parentOf(group) {
+  return GROUP_PARENT[group] ?? group;
+}
+
 // 'GRÃO MESTRE DOS TALHERES' → 'Grão Mestre dos Talheres'
 function professionLabel(group) {
   const minor = ['da', 'de', 'do', 'das', 'dos', 'e'];
@@ -81,7 +86,7 @@ export default function ShopModal({ visible, onClose }) {
   const q = search.trim().toLowerCase();
   const filtered = useMemo(() => (
     PROFESSION_ITEMS
-      .filter(it => grupo === 'todos' || it.grupo === grupo)
+      .filter(it => grupo === 'todos' || parentOf(it.grupo) === grupo)
       .filter(it => !q || it.nome.toLowerCase().includes(q))
   ), [grupo, q]);
 
@@ -147,7 +152,7 @@ export default function ShopModal({ visible, onClose }) {
                 Todos ({PROFESSION_ITEMS.length})
               </Text>
             </TouchableOpacity>
-            {PROFESSION_GROUPS.map(g => (
+            {MAIN_PROFESSION_GROUPS.map(g => (
               <TouchableOpacity
                 key={g}
                 style={[s.catChip, grupo === g && s.catChipActive]}

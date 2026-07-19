@@ -3187,6 +3187,31 @@ export const PROFESSION_GROUPS = [
   "XAMÃ"
 ];
 
+// Agrupa os 16 grupos de itens nas 8 profissões principais (trilhas de profissão):
+// cada trilha reúne as sub-profissões de dois grupos de loja.
+export const GROUP_PARENT = {
+  'XAMÃ':                    'SÁBIO DO CALDEIRÃO',
+  'PEADOR DE BICHÃO':        'CHEFE DA CAÇADA',
+  'FERMENTADOR':             'GRÃO MESTRE DOS TALHERES',
+  'COSTUREIRO':              'GRÃO MESTRE FIANDEIRO',
+  'FERREIRO':                'ROEDOR DE MINÉRIOS',
+  'MAGICONDUTOR':            'JOALHEIRO',
+  'RITUALISTA':              'SENHOR DOS REGISTROS',
+  'CHEFIA DA TORA E LASCAS': 'CONSTRUTOR',
+};
+
+// Na mesma ordem das trilhas de profissão (trailsData)
+export const MAIN_PROFESSION_GROUPS = [
+  'SÁBIO DO CALDEIRÃO',
+  'CHEFE DA CAÇADA',
+  'GRÃO MESTRE DOS TALHERES',
+  'GRÃO MESTRE FIANDEIRO',
+  'ROEDOR DE MINÉRIOS',
+  'JOALHEIRO',
+  'SENHOR DOS REGISTROS',
+  'CONSTRUTOR',
+];
+
 export const USE_CATEGORIES = [
   "Matéria-Prima",
   "Combate",
