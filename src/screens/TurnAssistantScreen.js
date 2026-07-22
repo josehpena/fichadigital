@@ -500,11 +500,10 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
     } else {
       formula = {
         partes: [
-          { label: 'Armas Brancas', val: armasBrancas },
           { label: 'Força', val: forca },
           { label: `Nível (${nivel})`, val: nivel },
         ],
-        total: armasBrancas + forca + nivel,
+        total: forca + nivel,
       };
     }
   }
