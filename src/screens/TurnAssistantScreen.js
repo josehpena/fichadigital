@@ -206,9 +206,9 @@ function MiraPanel({ damageTypes }) {
 const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
 const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
 
-// Atributos físicos (robustez) — os únicos que entram no cálculo de dano físico.
-// Tiras de reputação (carisma, manha, etiqueta) e concentração não somam ao dano.
-const PHYSICAL_ATTR_KEYS = ['forca', 'destreza', 'vigor'];
+// Só tiras de Força entram no dano físico base. Destreza (tira) vai para o acerto
+// de armas de distância; os demais atributos não somam ao dano.
+const DAMAGE_ATTR_TIRA_KEYS = ['forca'];
 const DEFAULT_DURACAO     = {
   1: '1 cena / 3 turnos',
   2: 'Semanas / 5 turnos',
@@ -543,7 +543,7 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
     }
 
     for (const t of allTiras) {
-      if (t.tipo === 'atributo' && t.valor && PHYSICAL_ATTR_KEYS.includes(t.subAttr)) {
+      if (t.tipo === 'atributo' && t.valor && DAMAGE_ATTR_TIRA_KEYS.includes(t.subAttr)) {
         const mult = (twoHand && t.subAttr === 'forca') ? 2 : 1;
         const val = t.valor * mult;
         const lbl = mult > 1
