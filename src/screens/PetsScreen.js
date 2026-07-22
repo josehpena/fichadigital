@@ -8,8 +8,9 @@ import { useCharacter } from '../context/CharacterContext';
 const PET_ICONS = ['🐾', '🐺', '🦅', '🐍', '🐉', '🐴', '🐆', '🦊', '🕷️', '🦂', '🐻', '🦇', '🐗', '🦌', '👻', '💀'];
 
 const TIPOS = {
-  domado: { label: 'Domado', hint: 'Pet vivo domado', icon: '🐾', color: '#a6e3a1' },
-  alma:   { label: 'Alma',   hint: 'Alma de um pet morto', icon: '👻', color: '#cba6f7' },
+  selvagem: { label: 'Selvagem', hint: 'Ainda não domado', icon: '🌿', color: '#fab387' },
+  domado:   { label: 'Domado',   hint: 'Pet vivo domado', icon: '🐾', color: '#a6e3a1' },
+  alma:     { label: 'Alma',     hint: 'Alma de um pet morto', icon: '👻', color: '#cba6f7' },
 };
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -411,11 +412,11 @@ function PetCard({ pet, dispatch }) {
 // ── Modal de novo pet ────────────────────────────────────────────────────────
 function NewPetModal({ visible, onClose, dispatch }) {
   const [nome, setNome]   = useState('');
-  const [tipo, setTipo]   = useState('domado');
+  const [tipo, setTipo]   = useState('selvagem');
   const [icone, setIcone] = useState('🐾');
 
   useEffect(() => {
-    if (visible) { setNome(''); setTipo('domado'); setIcone('🐾'); }
+    if (visible) { setNome(''); setTipo('selvagem'); setIcone('🐾'); }
   }, [visible]);
 
   function create() {
@@ -442,7 +443,7 @@ function NewPetModal({ visible, onClose, dispatch }) {
               <TouchableOpacity
                 key={key}
                 style={[s.tipoBtnBig, tipo === key && { borderColor: t.color, backgroundColor: t.color + '22' }]}
-                onPress={() => { setTipo(key); if (key === 'alma' && icone === '🐾') setIcone('👻'); if (key === 'domado' && icone === '👻') setIcone('🐾'); }}
+                onPress={() => { setTipo(key); if (key === 'alma' && icone === '🐾') setIcone('👻'); if (key !== 'alma' && icone === '👻') setIcone('🐾'); }}
               >
                 <Text style={s.tipoBtnBigIcon}>{t.icon}</Text>
                 <Text style={[s.tipoBtnBigLabel, tipo === key && { color: t.color }]}>{t.label}</Text>
