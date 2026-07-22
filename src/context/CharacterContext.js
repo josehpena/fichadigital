@@ -48,24 +48,29 @@ const ATTR_STATUS_IMPACT = {
   inteligencia: { mana: 1 },
 };
 
-// Bônus de status vindos de tiras 'status' em equipamentos e acessórios equipados
+// Bônus de status vindos de tiras em equipamentos e acessórios equipados.
+// Tiras 'status' somam direto ao teto; tiras 'atributo' somam via ATTR_STATUS_IMPACT
+// (ex: tira de +2 Vigor → +2 Vida e +4 Energia), igual aos efeitos narrativos.
 function computeEquipTirasBonuses(equipment = {}, accessories = []) {
   const result = {};
+  const applyTira = (t) => {
+    if (!t.valor) return;
+    if (t.tipo === 'status' && t.statusKey) {
+      result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
+    } else if (t.tipo === 'atributo' && t.subAttr) {
+      const impacts = ATTR_STATUS_IMPACT[t.subAttr] ?? {};
+      for (const [statusKey, mult] of Object.entries(impacts)) {
+        result[statusKey] = (result[statusKey] || 0) + t.valor * mult;
+      }
+    }
+  };
   for (const slot of [...ARMOR_SLOTS, ...HAND_SLOTS]) {
     const item = equipment[slot];
     if (!item || item.durabilidade === 0) continue;
-    for (const t of (item.tiras ?? [])) {
-      if (t.tipo === 'status' && t.statusKey && t.valor) {
-        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
-      }
-    }
+    for (const t of (item.tiras ?? [])) applyTira(t);
   }
   for (const acc of accessories) {
-    for (const t of (acc.tiras ?? [])) {
-      if (t.tipo === 'status' && t.statusKey && t.valor) {
-        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
-      }
-    }
+    for (const t of (acc.tiras ?? [])) applyTira(t);
   }
   return result;
 }
@@ -195,6 +200,7 @@ function reducer(state, action) {
         inventory:        p.inventory        ?? INITIAL_CHARACTER.inventory,
         narrativeEffects: p.narrativeEffects ?? INITIAL_CHARACTER.narrativeEffects,
         journal:          p.journal          ?? INITIAL_CHARACTER.journal,
+        pets:             p.pets             ?? INITIAL_CHARACTER.pets,
         settings,
       };
     }
@@ -1207,6 +1213,39 @@ function reducer(state, action) {
       );
       return { ...state, journal: { ...state.journal, entries } };
     }
+
+    // ── Pets ──────────────────────────────────────────────────────────────────
+
+    // { pet: { nome, icone, tipo } } — cria um novo pet com defaults
+    case 'PET_ADD': {
+      const pet = {
+        id: `pet_${Date.now()}`,
+        nome: 'Pet',
+        icone: '🐾',
+        tipo: 'domado',        // 'domado' | 'alma'
+        invocado: false,
+        vida: { current: 10, max: 10 },
+        mana: { current: 0, max: 0 },
+        caracteristicas: [],
+        equipamentos: [],
+        bolsas: [],
+        obs: '',
+        ...action.pet,
+      };
+      return { ...state, pets: [...(state.pets ?? []), pet] };
+    }
+
+    // { petId, changes } — merge raso no pet (usado para status, listas aninhadas, etc.)
+    case 'PET_UPDATE': {
+      const pets = (state.pets ?? []).map(p =>
+        p.id === action.petId ? { ...p, ...action.changes } : p
+      );
+      return { ...state, pets };
+    }
+
+    // { petId }
+    case 'PET_REMOVE':
+      return { ...state, pets: (state.pets ?? []).filter(p => p.id !== action.petId) };
 
     case 'RESET':
       return INITIAL_CHARACTER;

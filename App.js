@@ -15,6 +15,7 @@ import SkillTreeScreen     from './src/screens/SkillTreeScreen';
 import TitlesScreen        from './src/screens/TitlesScreen';
 import InventoryScreen     from './src/screens/InventoryScreen';
 import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
+import PetsScreen          from './src/screens/PetsScreen';
 import SwipeTabs           from './src/components/SwipeTabs';
 import CustomizationModal  from './src/components/CustomizationModal';
 import RaceSelectionModal  from './src/components/RaceSelectionModal';
@@ -31,6 +32,7 @@ const TAB_ICONS = {
   Personagem:  '📜',
   Equipamento: '🛡️',
   Habilidades: '🌟',
+  Pets:        '🐾',
   Turno:       '⚔️',
 };
 
@@ -240,6 +242,7 @@ function AppContent() {
           <Tab.Screen name="Personagem"  component={CharacterSection}    options={{ tabBarLabel: 'Personagem' }} />
           <Tab.Screen name="Equipamento" component={GearSection}         options={{ tabBarLabel: 'Equipamento' }} />
           <Tab.Screen name="Habilidades" component={AbilitySection}      options={{ tabBarLabel: 'Habilidades' }} />
+          <Tab.Screen name="Pets"        component={PetsScreen}          options={{ title: 'Pets', tabBarLabel: 'Pets' }} />
           <Tab.Screen name="Turno"       component={TurnAssistantScreen} options={{ title: 'Assistente de Turno', tabBarLabel: 'Turno' }} />
         </Tab.Navigator>
 
