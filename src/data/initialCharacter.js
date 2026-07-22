@@ -124,6 +124,17 @@ export const INITIAL_CHARACTER = {
     entries: [],
   },
 
+  // Pets: cada um é uma mini-ficha. Domado (pet vivo) ou Alma (pet morto).
+  // pet: {
+  //   id, nome, icone, tipo: 'domado'|'alma', invocado: bool,
+  //   vida: { current, max }, mana: { current, max },
+  //   caracteristicas: [{ id, texto }],
+  //   equipamentos:    [{ id, nome, obs }],
+  //   bolsas:          [{ id, nome, icone, capacidade, itens: [{ nome, obs }] }],
+  //   obs,
+  // }
+  pets: [],
+
   settings: {
     statusOrder: ['vida', 'energia', 'mana', 'forcaDeVontade', 'humanidade', 'xp'],
     xpCosts: {

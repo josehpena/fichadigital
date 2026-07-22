@@ -195,6 +195,7 @@ function reducer(state, action) {
         inventory:        p.inventory        ?? INITIAL_CHARACTER.inventory,
         narrativeEffects: p.narrativeEffects ?? INITIAL_CHARACTER.narrativeEffects,
         journal:          p.journal          ?? INITIAL_CHARACTER.journal,
+        pets:             p.pets             ?? INITIAL_CHARACTER.pets,
         settings,
       };
     }
@@ -1207,6 +1208,39 @@ function reducer(state, action) {
       );
       return { ...state, journal: { ...state.journal, entries } };
     }
+
+    // ── Pets ──────────────────────────────────────────────────────────────────
+
+    // { pet: { nome, icone, tipo } } — cria um novo pet com defaults
+    case 'PET_ADD': {
+      const pet = {
+        id: `pet_${Date.now()}`,
+        nome: 'Pet',
+        icone: '🐾',
+        tipo: 'domado',        // 'domado' | 'alma'
+        invocado: false,
+        vida: { current: 10, max: 10 },
+        mana: { current: 0, max: 0 },
+        caracteristicas: [],
+        equipamentos: [],
+        bolsas: [],
+        obs: '',
+        ...action.pet,
+      };
+      return { ...state, pets: [...(state.pets ?? []), pet] };
+    }
+
+    // { petId, changes } — merge raso no pet (usado para status, listas aninhadas, etc.)
+    case 'PET_UPDATE': {
+      const pets = (state.pets ?? []).map(p =>
+        p.id === action.petId ? { ...p, ...action.changes } : p
+      );
+      return { ...state, pets };
+    }
+
+    // { petId }
+    case 'PET_REMOVE':
+      return { ...state, pets: (state.pets ?? []).filter(p => p.id !== action.petId) };
 
     case 'RESET':
       return INITIAL_CHARACTER;
