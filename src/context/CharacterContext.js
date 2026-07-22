@@ -48,24 +48,29 @@ const ATTR_STATUS_IMPACT = {
   inteligencia: { mana: 1 },
 };
 
-// Bônus de status vindos de tiras 'status' em equipamentos e acessórios equipados
+// Bônus de status vindos de tiras em equipamentos e acessórios equipados.
+// Tiras 'status' somam direto ao teto; tiras 'atributo' somam via ATTR_STATUS_IMPACT
+// (ex: tira de +2 Vigor → +2 Vida e +4 Energia), igual aos efeitos narrativos.
 function computeEquipTirasBonuses(equipment = {}, accessories = []) {
   const result = {};
+  const applyTira = (t) => {
+    if (!t.valor) return;
+    if (t.tipo === 'status' && t.statusKey) {
+      result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
+    } else if (t.tipo === 'atributo' && t.subAttr) {
+      const impacts = ATTR_STATUS_IMPACT[t.subAttr] ?? {};
+      for (const [statusKey, mult] of Object.entries(impacts)) {
+        result[statusKey] = (result[statusKey] || 0) + t.valor * mult;
+      }
+    }
+  };
   for (const slot of [...ARMOR_SLOTS, ...HAND_SLOTS]) {
     const item = equipment[slot];
     if (!item || item.durabilidade === 0) continue;
-    for (const t of (item.tiras ?? [])) {
-      if (t.tipo === 'status' && t.statusKey && t.valor) {
-        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
-      }
-    }
+    for (const t of (item.tiras ?? [])) applyTira(t);
   }
   for (const acc of accessories) {
-    for (const t of (acc.tiras ?? [])) {
-      if (t.tipo === 'status' && t.statusKey && t.valor) {
-        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
-      }
-    }
+    for (const t of (acc.tiras ?? [])) applyTira(t);
   }
   return result;
 }
