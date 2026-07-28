@@ -20,6 +20,7 @@ import SwipeTabs           from './src/components/SwipeTabs';
 import CustomizationModal  from './src/components/CustomizationModal';
 import RaceSelectionModal  from './src/components/RaceSelectionModal';
 import JournalModal        from './src/components/JournalModal';
+import OverviewModal       from './src/components/OverviewModal';
 import AdventuresScreen    from './src/screens/AdventuresScreen';
 import SheetSelectScreen   from './src/screens/SheetSelectScreen';
 import AuthScreen          from './src/screens/AuthScreen';
@@ -64,6 +65,7 @@ function AppContent() {
   const [selectedSheet, setSelectedSheet] = useState(null);
   const [showCustom, setShowCustom]         = useState(false);
   const [showJournal, setShowJournal]       = useState(false);
+  const [showOverview, setShowOverview]     = useState(false);
   const [showAdventures, setShowAdventures] = useState(false);
   const [showRaceSelect, setShowRaceSelect] = useState(false);
   const [isFirstSetup, setIsFirstSetup]   = useState(false);
@@ -217,6 +219,13 @@ function AppContent() {
                   <Text style={{ fontSize: 20 }}>{'\u{1F5FA}\uFE0F'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  onPress={() => setShowOverview(true)}
+                  style={{ padding: 6 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={{ fontSize: 20 }}>{'\u{1F4CA}'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   onPress={() => setShowJournal(true)}
                   style={{ padding: 6 }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -254,6 +263,7 @@ function AppContent() {
           sheetName={selectedSheet.name}
         />
         <JournalModal visible={showJournal} onClose={() => setShowJournal(false)} />
+        <OverviewModal visible={showOverview} onClose={() => setShowOverview(false)} />
         <RaceSelectionModal
           visible={showRaceSelect}
           onClose={handleCloseRaceSelect}
