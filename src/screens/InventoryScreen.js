@@ -1546,6 +1546,7 @@ export default function InventoryScreen() {
   const { character, dispatch } = useCharacter();
   const [showNewStorage, setShowNewStorage] = useState(false);
   const [showShop, setShowShop]             = useState(false);
+  const [coinAmount, setCoinAmount]         = useState('');
 
   const inv = character.inventory ?? {
     bolsa: { capacidade: 6, itens: [] },
@@ -1619,6 +1620,35 @@ export default function InventoryScreen() {
         <CoinBtn delta={10}   color="#a6e3a1" onPress={changeMoedas} />
         <CoinBtn delta={50}   color="#a6e3a1" onPress={changeMoedas} />
         <CoinBtn delta={100}  color="#a6e3a1" onPress={changeMoedas} />
+      </View>
+
+      {/* Valor livre digitado */}
+      <View style={styles.coinCustomRow}>
+        <TouchableOpacity
+          style={[styles.coinCustomBtn, styles.coinCustomBtnNeg, !coinAmount && styles.coinCustomBtnOff]}
+          disabled={!coinAmount}
+          onPress={() => { changeMoedas(-(parseInt(coinAmount, 10) || 0)); setCoinAmount(''); }}
+        >
+          <Text style={[styles.coinCustomBtnText, { color: '#f38ba8' }]}>− Gastar</Text>
+        </TouchableOpacity>
+
+        <TextInput
+          style={styles.coinCustomInput}
+          value={coinAmount}
+          onChangeText={v => setCoinAmount(v.replace(/[^0-9]/g, '').slice(0, 7))}
+          keyboardType="number-pad"
+          placeholder="0"
+          placeholderTextColor="#45475a"
+          maxLength={7}
+        />
+
+        <TouchableOpacity
+          style={[styles.coinCustomBtn, styles.coinCustomBtnPos, !coinAmount && styles.coinCustomBtnOff]}
+          disabled={!coinAmount}
+          onPress={() => { changeMoedas(parseInt(coinAmount, 10) || 0); setCoinAmount(''); }}
+        >
+          <Text style={[styles.coinCustomBtnText, { color: '#a6e3a1' }]}>+ Receber</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.divider} />
@@ -1822,6 +1852,21 @@ const styles = StyleSheet.create({
 
   coinRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   coinSep: { flex: 1 },
+
+  coinCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  coinCustomBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
+    backgroundColor: '#1e1e2e', borderWidth: 1,
+  },
+  coinCustomBtnNeg: { borderColor: '#f38ba855' },
+  coinCustomBtnPos: { borderColor: '#a6e3a155' },
+  coinCustomBtnOff: { opacity: 0.35 },
+  coinCustomBtnText: { fontSize: 13, fontWeight: '700' },
+  coinCustomInput: {
+    width: 90, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: '#181825', borderWidth: 1, borderColor: '#45475a',
+    color: '#f9e2af', fontSize: 16, fontWeight: '700', textAlign: 'center',
+  },
   coinBtn: {
     borderRadius: 8, borderWidth: 1.5,
     paddingHorizontal: 11, paddingVertical: 8,
