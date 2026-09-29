@@ -175,7 +175,12 @@ export function isConditionActive(condicao, character) {
     return !!v && v.current === v.max && v.max > 0;
   }
   if (condicao === 'tem_armadura') {
-    return ARMOR_SLOTS.some(k => (character?.equipment?.[k]?.durabilidade ?? 0) > 0);
+    // Slots vazios nascem com durabilidade 10, então checar só a durabilidade
+    // dava a condição por ativa com o personagem sem nada equipado.
+    return ARMOR_SLOTS.some(k => {
+      const eq = character?.equipment?.[k];
+      return !!eq?.nome && (eq.durabilidade ?? 0) > 0;
+    });
   }
   return null;
 }

@@ -204,6 +204,9 @@ function MiraPanel({ damageTypes }) {
 
 
 const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
+// Fallback para os 8 níveis de magia com "custo": null nos dados.
+// Valores = custo predominante de cada nível nas trilhas (2 / 3 / 5).
+const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
 const DEFAULT_DURACAO     = {
   1: '1 cena / 3 turnos',
   2: 'Semanas / 5 turnos',

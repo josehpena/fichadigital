@@ -237,13 +237,18 @@ function reducer(state, action) {
           for (const skillId of action.startingMagicSkills) {
             newSkills[skillId] = Math.max(newSkills[skillId] ?? 0, sub.startingMagic.nivel);
           }
+          // A raça presenteia a PRIMEIRA maestria: o jogador não paga os 40 XP de
+          // aquisição nem os níveis iniciais, mas o `cost` é o preço normal de
+          // primeira maestria — ele é o multiplicador de XP por nível daqui em
+          // diante, então deixá-lo em 0 tornaria a trilha inteira gratuita.
+          const FIRST_TRAIL_COST = 40;
           newState = {
             ...newState,
             skillTree: {
               ...newState.skillTree,
               acquiredTrails: {
                 ...(newState.skillTree?.acquiredTrails ?? {}),
-                [trail.id]: { cost: existing?.cost ?? 0, skills: newSkills },
+                [trail.id]: { cost: existing?.cost ?? FIRST_TRAIL_COST, skills: newSkills },
               },
               trailCount: (newState.skillTree?.trailCount ?? 0) + (existing ? 0 : 1),
             },
