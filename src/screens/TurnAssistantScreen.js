@@ -238,12 +238,12 @@ const MAGIC_WEAPON_SKILLS = {
     },
     // "O próximo teste MENTAL utiliza CONCENTRAÇÃO"
     serenidade: {
-      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração (Serenidade)' },
+      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração' },
     },
   },
   bastao_natural: {
     serenidade: {
-      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração (Serenidade)' },
+      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração' },
     },
   },
   varinha_ifurita: {
@@ -1234,15 +1234,20 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   }
 
   // Tiras relevantes para magia: Raciocínio (atributo) e Magia (perícia)
-  const tiraBonuses = [];
+  // Agrega por rótulo: 3 tiras de Magia viram uma linha "3 Magia (tira)"
+  // em vez de três linhas de "1 Magia (tira)".
+  const tiraAcc = {};
   for (const t of allTiras) {
     if (!t.valor) continue;
     if (t.tipo === 'atributo' && t.subAttr === 'raciocinio') {
-      tiraBonuses.push({ label: `${ATTRIBUTE_LABELS.raciocinio} (tira)`, val: t.valor });
+      const k = `${ATTRIBUTE_LABELS.raciocinio} (tira)`;
+      tiraAcc[k] = (tiraAcc[k] ?? 0) + t.valor;
     } else if (t.tipo === 'pericia' && t.skill === 'magia') {
-      tiraBonuses.push({ label: `${SKILL_LABELS.magia} (tira)`, val: t.valor });
+      const k = `${SKILL_LABELS.magia} (tira)`;
+      tiraAcc[k] = (tiraAcc[k] ?? 0) + t.valor;
     }
   }
+  const tiraBonuses = Object.entries(tiraAcc).map(([label, val]) => ({ label, val }));
   const tiraBonusTotal = tiraBonuses.reduce((acc, b) => acc + b.val, 0);
 
   const spells = getAcquiredMagicSpells(character.skillTree?.acquiredTrails);
@@ -1317,8 +1322,12 @@ function MagicPanel({ actionsLeft, onConfirm }) {
         const handMult = (twoHandMagic && sk.id === 'ascensao') ? 3 : 1;
         const finalVal = total * handMult;
         if (finalVal > 0) {
-          const tiraNote = tiraSum > 0 ? ` (${base}+${tiraSum} tira)` : '';
           const multNote = handMult > 1 ? `×${handMult}` : '';
+          // attrGroup (Concentração) mostra só o nome e o total — não abre os
+          // sub-atributos nem o split base/tira.
+          const tiraNote = (nv1.source === 'attrGroup' || tiraSum === 0)
+            ? ''
+            : ` (${base}+${tiraSum} tira)`;
           const entry = { label: `${nv1.label}${multNote}${tiraNote}`, val: finalVal };
           if (nv1.target === 'cast') weaponCastBonuses.push(entry);
           else weaponIntensityBonuses.push(entry);
