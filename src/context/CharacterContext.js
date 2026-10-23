@@ -9,6 +9,8 @@ import {
   ARMOR_SLOTS,
   HAND_SLOTS,
   xpCostForRange,
+  trailAcquisitionCost,
+  FIRST_TRAIL_COST,
 } from '../data/initialCharacter';
 import { findTrail, findCategoryTrails, TRAILS_MAGIAS } from '../data/trailsData';
 import { findTitleById } from '../data/titlesData';
@@ -243,13 +245,17 @@ function reducer(state, action) {
           for (const skillId of action.startingMagicSkills) {
             newSkills[skillId] = Math.max(newSkills[skillId] ?? 0, sub.startingMagic.nivel);
           }
+          // A raça presenteia a PRIMEIRA maestria: o jogador não paga o XP de
+          // aquisição nem os níveis iniciais, mas o `cost` é o preço normal de
+          // primeira maestria — ele é o multiplicador de XP por nível daqui em
+          // diante, então deixá-lo em 0 tornaria a trilha inteira gratuita.
           newState = {
             ...newState,
             skillTree: {
               ...newState.skillTree,
               acquiredTrails: {
                 ...(newState.skillTree?.acquiredTrails ?? {}),
-                [trail.id]: { cost: existing?.cost ?? 0, skills: newSkills },
+                [trail.id]: { cost: existing?.cost ?? FIRST_TRAIL_COST, skills: newSkills },
               },
               trailCount: (newState.skillTree?.trailCount ?? 0) + (existing ? 0 : 1),
             },
@@ -697,7 +703,7 @@ function reducer(state, action) {
       if (state.skillTree.acquiredTrails[action.trailId]) return state; // already acquired
       const trail = findTrail(action.trailId);
       if (!trail) return state;
-      const baseCost = 40 + state.skillTree.trailCount * 20;
+      const baseCost = trailAcquisitionCost(state.skillTree.trailCount);
       const nextCost = applyRaceTrailDiscount(state, action.trailId, baseCost);
       if (state.status.xp.current < nextCost) return state;
       const newXp = { ...state.status.xp, current: state.status.xp.current - nextCost };
@@ -727,7 +733,7 @@ function reducer(state, action) {
       let newSkillTree = state.skillTree;
       if (!trailData) {
         // Se pertence a uma categoria, reutiliza o custo de outra trilha já adquirida
-        let nextCost = 40 + state.skillTree.trailCount * 20;
+        let nextCost = trailAcquisitionCost(state.skillTree.trailCount);
         if (trail.categoria) {
           const catTrails = findCategoryTrails(trail.categoria);
           const existing = catTrails.find(ct => state.skillTree.acquiredTrails[ct.id]);

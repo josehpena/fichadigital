@@ -8,7 +8,7 @@
 //       'vida_completa' → vida.current === vida.max
 //       'tem_armadura'  → tem ao menos 1 peça de armadura com durabilidade > 0
 
-import { ARMOR_SLOTS } from './initialCharacter';
+import { ARMOR_SLOTS, FIRST_TRAIL_COST } from './initialCharacter';
 import { TRAILS_MAGIAS, TRAILS_PROFISSOES } from './trailsData';
 
 export const RACES = [
@@ -175,7 +175,12 @@ export function isConditionActive(condicao, character) {
     return !!v && v.current === v.max && v.max > 0;
   }
   if (condicao === 'tem_armadura') {
-    return ARMOR_SLOTS.some(k => (character?.equipment?.[k]?.durabilidade ?? 0) > 0);
+    // Slots vazios nascem com durabilidade 10, então checar só a durabilidade
+    // dava a condição por ativa com o personagem sem nada equipado.
+    return ARMOR_SLOTS.some(k => {
+      const eq = character?.equipment?.[k];
+      return !!eq?.nome && (eq.durabilidade ?? 0) > 0;
+    });
   }
   return null;
 }
@@ -191,7 +196,7 @@ export function raceTrailDiscountedCost(race, acquiredTrails, trailId, baseCost)
   }
   if (TRAILS_MAGIAS.some(t => t.id === trailId)) {
     const magicAcquired = TRAILS_MAGIAS.filter(t => acquiredTrails?.[t.id]).length;
-    if (magicAcquired < 2) return Math.min(baseCost, 40); // custo da primeira maestria
+    if (magicAcquired < 2) return Math.min(baseCost, FIRST_TRAIL_COST);
   }
   return baseCost;
 }

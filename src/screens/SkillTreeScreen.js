@@ -6,6 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
 import { TRAILS_PROFISSOES, TRAILS_ARMAS, TRAILS_MAGIAS } from '../data/trailsData';
+import { trailAcquisitionCost } from '../data/initialCharacter';
 import { raceTrailDiscountedCost } from '../data/racesData';
 import { ITEMS_BY_SUB } from '../data/professionItemsData';
 
@@ -310,7 +311,7 @@ export default function SkillTreeScreen() {
   const [activeTab, setActiveTab] = useState('profissoes');
   const [skillDetail, setSkillDetail] = useState(null);
 
-  const nextTrailCost = 40 + character.skillTree.trailCount * 20;
+  const nextTrailCost = trailAcquisitionCost(character.skillTree.trailCount);
   const tab = CATEGORY_TABS.find(t => t.key === activeTab);
 
   // Desconto racial (Azunam) para a categoria da aba ativa

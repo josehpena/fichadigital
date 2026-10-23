@@ -26,10 +26,29 @@ const TIER_LABEL = { 1: 'Nível 1', 2: 'Nível 2', 3: 'Nível 3', 4: 'Nível 4' 
 
 // ── Binding helpers ───────────────────────────────────────────────────────────
 
-function getBindableSkills(req, acquiredTrails, bindings, excludeTitleId = null) {
+// Títulos da própria cadeia de pré-requisitos (transitivo), incluindo ele mesmo.
+// As habilidades vinculadas a esses títulos podem ser REAPROVEITADAS, porque o
+// requisito do sucessor é a mesma habilidade em nível mais alto ("3 habilidades
+// em mãos livres lvl 1" no Lutador → "…lvl 2" no Monge). Sem isso as trilhas de
+// arma (3 skills cada) esgotam e o sucessor fica impossível de adquirir.
+function getChainTitleIds(titleId) {
+  const chain = new Set();
+  if (!titleId) return chain;
+  const stack = [titleId];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (chain.has(cur)) continue;
+    chain.add(cur);
+    for (const p of (TITLE_PREREQS[cur] ?? [])) stack.push(p);
+  }
+  return chain;
+}
+
+function getBindableSkills(req, acquiredTrails, bindings, forTitleId = null) {
+  const reusable = getChainTitleIds(forTitleId);
   const allBound = new Set();
   for (const [tid, list] of Object.entries(bindings ?? {})) {
-    if (tid === excludeTitleId) continue; // ignora as próprias bindings ao revincular
+    if (reusable.has(tid)) continue; // próprio título + cadeia de pré-requisitos
     for (const b of list) allBound.add(`${b.trailId}:${b.skillId}`);
   }
   const pool = FONTE_TRAILS[req.fonte] ?? [];
@@ -58,23 +77,23 @@ function getBindableSkills(req, acquiredTrails, bindings, excludeTitleId = null)
   return byCategory;
 }
 
-function hasEnoughBindable(req, acquiredTrails, bindings) {
-  const by = getBindableSkills(req, acquiredTrails, bindings);
+function hasEnoughBindable(req, acquiredTrails, bindings, forTitleId = null) {
+  const by = getBindableSkills(req, acquiredTrails, bindings, forTitleId);
   if (req.mesmaCategoria || req.mesmaTrilha) return Object.values(by).some(a => a.length >= req.quantidade);
   return Object.values(by).flat().length >= req.quantidade;
 }
 
 // ── Skill Binding Modal ───────────────────────────────────────────────────────
 
-function SkillBindingModal({ visible, title, acquiredTrails, bindings, excludeTitleId, color, onConfirm, onCancel }) {
+function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, onConfirm, onCancel }) {
   const insets = useSafeAreaInsets();
   const req = title?.requisitoHabilidades;
   const [selected, setSelected] = useState([]);   // [{trailId,skillId,nome}]
   const [lockedCat, setLockedCat] = useState(null);
 
   const byCategory = useMemo(
-    () => req ? getBindableSkills(req, acquiredTrails, bindings, excludeTitleId) : {},
-    [req, acquiredTrails, bindings, excludeTitleId]
+    () => req ? getBindableSkills(req, acquiredTrails, bindings, title?.id) : {},
+    [req, acquiredTrails, bindings, title?.id]
   );
 
   if (!req || !title) return null;
@@ -195,7 +214,7 @@ function TitleCard({ title, color }) {
   const req        = title.requisitoHabilidades;
 
   const skillReqMet = !req || hasEnoughBindable(
-    req, character.skillTree.acquiredTrails, character.titles?.bindings ?? {}
+    req, character.skillTree.acquiredTrails, character.titles?.bindings ?? {}, title.id
   );
   const canAcquire = !acquired && prereqsMet && skillReqMet;
 
@@ -305,7 +324,6 @@ function TitleCard({ title, color }) {
         title={title}
         acquiredTrails={character.skillTree.acquiredTrails}
         bindings={character.titles?.bindings ?? {}}
-        excludeTitleId={bindingMode === 'rebind' ? title.id : null}
         color={color}
         onConfirm={skills => {
           const mode = bindingMode;

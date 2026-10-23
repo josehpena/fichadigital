@@ -95,12 +95,10 @@ const OBJETO_DIFICULDADE   = {
 const TAMANHO_VOLUME = { Grande: 'acima de 2m³', Médio: 'entre 1-2m³', Pequeno: 'abaixo de 1m³' };
 
 // ─── Componente de Mira ───────────────────────────────────────────────────────
-function MiraPanel({ damageTypes }) {
-  const [tipoAlvo, setTipoAlvo]   = useState(null);  // 'humanoide' | 'objeto'
-  const [alvoId, setAlvoId]       = useState(null);
-  const [objTam, setObjTam]       = useState('Médio');
-  const [objVeloc, setObjVeloc]   = useState('Normal');
-
+// Estado controlado pelo AttackPanel: a fórmula de acerto só existe quando há
+// um alvo mirado, e o alvo precisa ser limpo ao trocar de arma (um alvo
+// "requer Cortante" ficava preso ao mudar para uma arma Perfurante).
+function MiraPanel({ damageTypes, tipoAlvo, setTipoAlvo, alvoId, setAlvoId, objTam, setObjTam, objVeloc, setObjVeloc }) {
   const dificuldadeObj = OBJETO_DIFICULDADE[`${objTam}-${objVeloc}`] ?? 20;
   const alvoHum = ALVOS_HUMANOIDE.find(a => a.id === alvoId);
   const isCortante = damageTypes.includes('Cortante');
@@ -203,6 +201,8 @@ function MiraPanel({ damageTypes }) {
 }
 
 
+// Fallback para os 8 níveis de magia com "custo": null nos dados.
+// Valores = custo predominante de cada nível nas trilhas (2 / 3 / 5).
 const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
 const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
 
@@ -226,23 +226,62 @@ const REACTION_TITLES = {
 // Títulos que reduzem custo de mana das magias (efeito global, sem maestria)
 const MANA_REDUCE_TITLES = ['feiticeiro'];
 
-// Skills de armas (cetros, varinhas) que somam à INTENSIDADE da magia
-// source: 'attr' lê de attributes[group][subAttr]; 'skill' lê de skills[statKey]
-// Nv1 (Soma X na intensidade) e Nv2 (toggle: dobrar intensidade)
-const MAGIC_INTENSITY_WEAPON_SKILLS = {
+// Skills de armas mágicas (cetros, varinhas, bastões) que afetam a conjuração.
+// target: 'cast'      → soma na fórmula do TESTE DE CONJURAÇÃO (antes do ÷5)
+//         'intensity' → soma na INTENSIDADE (depois do ÷5)
+// source: 'attr'      → attributes[group][subAttr]       (+ tiras daquele subAttr)
+//         'attrGroup' → soma de TODOS os subAttrs de group (+ tiras deles)
+//         'skill'     → skills[statKey]                  (+ tiras daquela perícia)
+const MAGIC_WEAPON_SKILLS = {
   cetro_aghanim: {
     ascensao: {
-      nv1: { source: 'attr', group: 'concentracao', subAttr: 'inteligencia', label: 'Inteligência (Ascensão)' },
+      nv1: { target: 'intensity', source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
       nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
+    },
+    // "O próximo teste MENTAL utiliza CONCENTRAÇÃO"
+    serenidade: {
+      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração' },
+    },
+  },
+  bastao_natural: {
+    serenidade: {
+      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração' },
     },
   },
   varinha_ifurita: {
     ascensao: {
-      nv1: { source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
+      nv1: { target: 'intensity', source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
       nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
     },
   },
 };
+
+// Resolve o valor de um nv1 (base + tiras correspondentes).
+// Retorna { val, base, tiraSum }.
+function resolveMagicSkillValue(nv1, attrs, skills, allTiras) {
+  let base = 0;
+  let tiraSum = 0;
+  if (nv1.source === 'attrGroup') {
+    const group = attrs?.[nv1.group] ?? {};
+    for (const [subAttr, v] of Object.entries(group)) {
+      base += v ?? 0;
+      tiraSum += allTiras
+        .filter(t => t.tipo === 'atributo' && t.subAttr === subAttr && t.valor)
+        .reduce((s, t) => s + t.valor, 0);
+    }
+  } else if (nv1.source === 'attr') {
+    base = attrs?.[nv1.group]?.[nv1.subAttr] ?? 0;
+    tiraSum = allTiras
+      .filter(t => t.tipo === 'atributo' && t.subAttr === nv1.subAttr && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+  } else {
+    base = skills?.[nv1.statKey] ?? 0;
+    tiraSum = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === nv1.statKey && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+  }
+  return { val: base + tiraSum, base, tiraSum };
+}
 
 // Magias cujo efeito ao nível N adiciona valor fixo à INTENSIDADE de conjuração
 const MAGIC_SPELL_INTENSITY_BONUS = {
@@ -251,10 +290,11 @@ const MAGIC_SPELL_INTENSITY_BONUS = {
   },
 };
 
-// Habilidades que adicionam stats ao BLOQUEIO
-// confronto Nv1 = vigor incondicional; Nv2 = robustez condicional (mostramos mas não somamos)
-// bloqueador Nv1 = briga (condicional: "se briga < bloqueio base")
-// fatiador Nv1 = armasBrancas (dano E bloqueio)
+// Habilidades de arma que somam stats ao BLOQUEIO.
+// Todas são habilidades de arma: só valem com o nível selecionado (minLevel).
+// fatiador   Nv1 = Instinto (também soma no dano), ×2 quando selecionado Nv3
+// bloqueador Nv1 = Instinto
+// confronto  Nv1 = Vigor; Nv2 = Robustez condicional (exibida, não somada)
 // source: 'skill' lê de character.skills; 'attr' lê de character.attributes[group][subAttr]
 const WEAPON_SKILL_BLOCK_MODS = {
   fatiador:   { minLevel: 1, source: 'skill', statKey: 'instinto', statLabel: 'Instinto',
@@ -310,8 +350,8 @@ function getBlockBonuses(blockWeapons, allLevels, characterSkills, characterAttr
 // minLevel = nível mínimo selecionado para o bônus entrar
 // tripleInTwoHand = true para respeitar a regra "perícia×3 em 2 mãos"
 const WEAPON_SKILL_DAMAGE_MODS = {
-  // fatiador (machado_do_norte + luvas_de_batalha): soma Instinto no dano
-  // Nv3 duplica efeitos do Nv1 → multiplicador 2 quando selLv >= 3
+  // fatiador (machado_do_norte + luvas_de_batalha): soma Instinto no dano,
+  // e só quando a habilidade é efetivamente usada (nível selecionado ≥ 1).
   fatiador: { minLevel: 1, statKey: 'instinto', label: 'Instinto', tripleInTwoHand: true,
     multiplier: (selLv) => selLv >= 3 ? 2 : 1 },
   // fighter (luvas_de_batalha) Nv2: soma Instinto em acerto e dano
@@ -459,6 +499,18 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
   const [twoHand,   setTwoHand]   = useState(false);
   // { [skillId]: selectedLevel }  — 0 = não usar
   const [skillLevels, setSkillLevels] = useState({});
+  // Mira: estado levantado para cá porque o acerto só é rolado quando se mira
+  const [tipoAlvo, setTipoAlvo] = useState(null);  // 'humanoide' | 'objeto'
+  const [alvoId, setAlvoId]     = useState(null);
+  const [objTam, setObjTam]     = useState('Médio');
+  const [objVeloc, setObjVeloc] = useState('Normal');
+
+  function clearMira() {
+    setTipoAlvo(null);
+    setAlvoId(null);
+    setObjTam('Médio');
+    setObjVeloc('Normal');
+  }
 
   const weapons = HAND_SLOTS
     .map(k => ({ key: k, label: EQUIP_LABELS[k], equip: character.equipment[k] }))
@@ -506,6 +558,19 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
         total: forca + nivel,
       };
     }
+    // Corpo a corpo: o acerto só é rolado quando se MIRA num alvo específico.
+    // Armas Brancas serve para mirar, não entra no dano.
+    if (!ranged && (alvoId || tipoAlvo === 'objeto')) {
+      acertoFormula = {
+        mira: true,
+        partes: [
+          { label: 'Destreza', val: destreza },
+          { label: 'Armas Brancas', val: armasBrancas },
+          { label: 'd20', val: 'd20', dado: true },
+        ],
+        total: destreza + armasBrancas,
+      };
+    }
   }
 
   const acquiredSkills = weapon
@@ -541,39 +606,57 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
       for (const t of (acc.tiras ?? [])) allTiras.push(t);
     }
 
+    // Agrega por rótulo antes de empurrar, para que 3 tiras de 1 apareçam como
+    // um termo "3 X (tira)" em vez de três termos de "1 X (tira)".
+    const dmgAcc    = {};
+    const acertoAcc = {};
+    const bump = (acc, label, val) => { acc[label] = (acc[label] ?? 0) + val; };
+
     for (const t of allTiras) {
-      if (t.tipo === 'atributo' && t.valor && DAMAGE_ATTR_TIRA_KEYS.includes(t.subAttr)) {
+      if (!t.valor) continue;
+      if (t.tipo === 'atributo') {
+        // Destreza alimenta o acerto de mira no corpo a corpo, não o dano.
+        if (!ranged && t.subAttr === 'destreza' && acertoFormula?.mira) {
+          bump(acertoAcc, `${ATTRIBUTE_LABELS.destreza} (tira)`, t.valor);
+          continue;
+        }
+        // Dos atributos, só os listados somam no dano base (hoje: Força).
+        if (!DAMAGE_ATTR_TIRA_KEYS.includes(t.subAttr)) continue;
         const mult = (twoHand && t.subAttr === 'forca') ? 2 : 1;
-        const val = t.valor * mult;
-        const lbl = mult > 1
-          ? `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr}×2 (tira)`
-          : `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr} (tira)`;
-        formula.partes.push({ label: lbl, val });
-        formula.total += val;
-      } else if (t.tipo === 'pericia' && t.skill === 'armasBrancas' && t.valor) {
-        const mult = twoHand ? 3 : 1;
-        const val = t.valor * mult;
-        const lbl = mult > 1
-          ? `${SKILL_LABELS[t.skill] ?? t.skill}×3 (tira)`
-          : `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`;
-        formula.partes.push({ label: lbl, val });
-        formula.total += val;
-      } else if (t.tipo === 'pericia' && t.skill !== 'armasBrancas' && t.valor) {
-        formula.partes.push({ label: `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`, val: t.valor });
-        formula.total += t.valor;
+        const nome = ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr;
+        bump(dmgAcc, mult > 1 ? `${nome}×2 (tira)` : `${nome} (tira)`, t.valor * mult);
+      } else if (t.tipo === 'pericia' && t.skill === 'armasBrancas') {
+        // Armas Brancas serve para mirar — vai no acerto, não no dano.
+        if (!ranged) bump(acertoAcc, `${SKILL_LABELS.armasBrancas} (tira)`, t.valor);
+      } else if (t.tipo === 'pericia') {
+        bump(dmgAcc, `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`, t.valor);
       }
     }
 
     // Tiras de acerto para ranged
-    if (ranged && acertoFormula) {
+    if (ranged) {
       for (const t of allTiras) {
-        if (t.tipo === 'atributo' && t.valor && t.subAttr === 'destreza') {
-          acertoFormula.partes.push({ label: `${ATTRIBUTE_LABELS[t.subAttr]} (tira)`, val: t.valor });
-          acertoFormula.total += t.valor;
-        } else if (t.tipo === 'pericia' && t.valor && t.skill === 'armasRange') {
-          acertoFormula.partes.push({ label: `${SKILL_LABELS[t.skill]} (tira)`, val: t.valor });
-          acertoFormula.total += t.valor;
+        if (!t.valor) continue;
+        if (t.tipo === 'atributo' && t.subAttr === 'destreza') {
+          bump(acertoAcc, `${ATTRIBUTE_LABELS.destreza} (tira)`, t.valor);
+        } else if (t.tipo === 'pericia' && t.skill === 'armasRange') {
+          bump(acertoAcc, `${SKILL_LABELS.armasRange} (tira)`, t.valor);
         }
+      }
+    }
+
+    for (const [label, val] of Object.entries(dmgAcc)) {
+      formula.partes.push({ label, val });
+      formula.total += val;
+    }
+    if (acertoFormula) {
+      // insere antes do d20 para a linha terminar no dado
+      const dadoIdx = acertoFormula.partes.findIndex(p => p.dado);
+      const extras = Object.entries(acertoAcc).map(([label, val]) => ({ label, val }));
+      if (extras.length > 0) {
+        if (dadoIdx >= 0) acertoFormula.partes.splice(dadoIdx, 0, ...extras);
+        else acertoFormula.partes.push(...extras);
+        for (const e of extras) acertoFormula.total += e.val;
       }
     }
   }
@@ -627,7 +710,7 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
               <TouchableOpacity
                 key={w.key}
                 style={[s.chip, selSlot === w.key && s.chipActive]}
-                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSkillLevels({}); }}
+                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSkillLevels({}); clearMira(); }}
               >
                 <Text style={[s.chipText, selSlot === w.key && s.chipTextActive]}>
                   {w.equip.nome || w.label}
@@ -657,7 +740,9 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
 
       {acertoFormula && (
         <View style={s.formulaCard}>
-          <Text style={s.formulaTitle}>🎯 Teste de Acerto</Text>
+          <Text style={s.formulaTitle}>
+            {acertoFormula.mira ? '🎯 Teste de Acerto (Mira)' : '🎯 Teste de Acerto'}
+          </Text>
           <View style={s.formulaParts}>
             {acertoFormula.partes.map((p, i) => (
               <React.Fragment key={i}>
@@ -696,7 +781,13 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
               <Text style={s.formulaLbl}>Total</Text>
             </View>
           </View>
-          {!ranged && <Text style={s.formulaNote}>+ d20 de acerto (role separado)</Text>}
+          {!ranged && (
+            <Text style={s.formulaNote}>
+              {acertoFormula?.mira
+                ? 'Acerto rolado separado (ver 🎯 acima)'
+                : 'Sem mira: role o d20 de acerto normalmente'}
+            </Text>
+          )}
         </View>
       )}
 
@@ -755,7 +846,13 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
 
       {/* Mira */}
       {weapon && (
-        <MiraPanel damageTypes={getWeaponDamageTypes(weapon.tipo)} />
+        <MiraPanel
+          damageTypes={getWeaponDamageTypes(weapon.tipo)}
+          tipoAlvo={tipoAlvo} setTipoAlvo={setTipoAlvo}
+          alvoId={alvoId} setAlvoId={setAlvoId}
+          objTam={objTam} setObjTam={setObjTam}
+          objVeloc={objVeloc} setObjVeloc={setObjVeloc}
+        />
       )}
 
       {/* Efeitos aplicados */}
@@ -1196,15 +1293,20 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   }
 
   // Tiras relevantes para magia: Raciocínio (atributo) e Magia (perícia)
-  const tiraBonuses = [];
+  // Agrega por rótulo: 3 tiras de Magia viram uma linha "3 Magia (tira)"
+  // em vez de três linhas de "1 Magia (tira)".
+  const tiraAcc = {};
   for (const t of allTiras) {
     if (!t.valor) continue;
     if (t.tipo === 'atributo' && t.subAttr === 'raciocinio') {
-      tiraBonuses.push({ label: `${ATTRIBUTE_LABELS.raciocinio} (tira)`, val: t.valor });
+      const k = `${ATTRIBUTE_LABELS.raciocinio} (tira)`;
+      tiraAcc[k] = (tiraAcc[k] ?? 0) + t.valor;
     } else if (t.tipo === 'pericia' && t.skill === 'magia') {
-      tiraBonuses.push({ label: `${SKILL_LABELS.magia} (tira)`, val: t.valor });
+      const k = `${SKILL_LABELS.magia} (tira)`;
+      tiraAcc[k] = (tiraAcc[k] ?? 0) + t.valor;
     }
   }
+  const tiraBonuses = Object.entries(tiraAcc).map(([label, val]) => ({ label, val }));
   const tiraBonusTotal = tiraBonuses.reduce((acc, b) => acc + b.val, 0);
 
   const spells = getAcquiredMagicSpells(character.skillTree?.acquiredTrails);
@@ -1232,11 +1334,11 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   }
   const titleBonusTotal = titleBonuses.reduce((acc, b) => acc + b.val, 0);
 
-  // Armas equipadas que têm habilidades afetando intensidade (cetros, varinhas)
+  // Armas mágicas equipadas com habilidades que afetam a conjuração.
   // Inclui tipo2 (segunda trilha da arma) também.
-  const intensityWeapons = [];
-  function collectIntensitySkills(slotKey, weaponNome, trailId) {
-    const cfg = trailId ? MAGIC_INTENSITY_WEAPON_SKILLS[trailId] : null;
+  const magicWeapons = [];
+  function collectMagicSkills(slotKey, weaponNome, trailId) {
+    const cfg = trailId ? MAGIC_WEAPON_SKILLS[trailId] : null;
     if (!cfg) return;
     const acquired = character.skillTree?.acquiredTrails?.[trailId];
     if (!acquired) return;
@@ -1251,59 +1353,49 @@ function MagicPanel({ actionsLeft, onConfirm }) {
     }
     if (skills.length > 0) {
       // chave única para evitar colisão de skills entre tipo e tipo2 do mesmo slot
-      intensityWeapons.push({ slotKey: `${slotKey}:${trailId}`, weaponNome, skills });
+      magicWeapons.push({ slotKey: `${slotKey}:${trailId}`, weaponNome, skills });
     }
   }
   for (const slotKey of HAND_SLOTS) {
     const eq = character.equipment?.[slotKey];
     if (!eq) continue;
     const nome = eq.nome || '';
-    if (eq.tipo)  collectIntensitySkills(slotKey, nome || eq.tipo,  eq.tipo);
-    if (eq.tipo2) collectIntensitySkills(slotKey, nome || eq.tipo2, eq.tipo2);
+    if (eq.tipo)  collectMagicSkills(slotKey, nome || eq.tipo,  eq.tipo);
+    if (eq.tipo2) collectMagicSkills(slotKey, nome || eq.tipo2, eq.tipo2);
   }
 
-  // Bônus FLAT de intensidade vindos de skills de arma (Nv1: soma X).
-  // O valor de X inclui as tiras correspondentes (perícia ou atributo) — assim
-  // 5 Instinto + 2 tiras de Instinto = 7 de intensidade com Ascensão.
+  // Bônus FLAT das skills de arma selecionadas, separados por onde entram.
+  // O valor inclui as tiras correspondentes — 5 Instinto + 2 tiras = 7.
+  const weaponCastBonuses      = [];
   const weaponIntensityBonuses = [];
   let hasDoubleAvailable = false;
-  for (const w of intensityWeapons) {
+  for (const w of magicWeapons) {
     const slotLevels = weaponSkillLevels[w.slotKey] ?? {};
     for (const sk of w.skills) {
       const selLv = slotLevels[sk.id] ?? 0;
       if (selLv < 1) continue;
       const nv1 = sk.cfg.nv1;
       if (nv1) {
-        let base;
-        let tiraSum = 0;
-        if (nv1.source === 'attr') {
-          base = attrs?.[nv1.group]?.[nv1.subAttr] ?? 0;
-          tiraSum = allTiras
-            .filter(t => t.tipo === 'atributo' && t.subAttr === nv1.subAttr && t.valor)
-            .reduce((s, t) => s + t.valor, 0);
-        } else {
-          base = skills?.[nv1.statKey] ?? 0;
-          tiraSum = allTiras
-            .filter(t => t.tipo === 'pericia' && t.skill === nv1.statKey && t.valor)
-            .reduce((s, t) => s + t.valor, 0);
-        }
-        const total = base + tiraSum;
-        // Duas mãos só multiplica Ascensão — outras skills de intensidade
-        // (caso adicionemos no futuro) não recebem o ×3 da empunhadura.
+        const { val: total, base, tiraSum } = resolveMagicSkillValue(nv1, attrs, skills, allTiras);
+        // Duas mãos só multiplica Ascensão — outras skills não recebem o ×3.
         const handMult = (twoHandMagic && sk.id === 'ascensao') ? 3 : 1;
         const finalVal = total * handMult;
         if (finalVal > 0) {
-          const tiraNote = tiraSum > 0 ? ` (${base}+${tiraSum} tira)` : '';
           const multNote = handMult > 1 ? `×${handMult}` : '';
-          weaponIntensityBonuses.push({
-            label: `${nv1.label}${multNote}${tiraNote}`,
-            val: finalVal,
-          });
+          // attrGroup (Concentração) mostra só o nome e o total — não abre os
+          // sub-atributos nem o split base/tira.
+          const tiraNote = (nv1.source === 'attrGroup' || tiraSum === 0)
+            ? ''
+            : ` (${base}+${tiraSum} tira)`;
+          const entry = { label: `${nv1.label}${multNote}${tiraNote}`, val: finalVal };
+          if (nv1.target === 'cast') weaponCastBonuses.push(entry);
+          else weaponIntensityBonuses.push(entry);
         }
       }
       if (selLv >= 2 && sk.cfg.nv2?.toggleDouble) hasDoubleAvailable = true;
     }
   }
+  const weaponCastBonusTotal      = weaponCastBonuses.reduce((a, b) => a + b.val, 0);
   const weaponIntensityBonusTotal = weaponIntensityBonuses.reduce((a, b) => a + b.val, 0);
 
   // Bônus intrínseco de intensidade da própria magia (ENERGIA ARCANA Nv2: +5, Nv3: +10)
@@ -1317,7 +1409,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
     .reduce((a, v) => a + v, 0);
   const energiaAtual = character.status?.energia?.current ?? 0;
 
-  const baseCast   = raciocinio + magia + titleBonusTotal + tiraBonusTotal;
+  const baseCast   = raciocinio + magia + titleBonusTotal + tiraBonusTotal + weaponCastBonusTotal;
   const d20Value   = Math.min(20, Math.max(0, parseInt(d20Input) || 0));
   const hasD20     = d20Input.trim() !== '' && d20Value > 0;
   const totalCast  = baseCast + d20Value;
@@ -1388,6 +1480,15 @@ function MagicPanel({ actionsLeft, onConfirm }) {
               <View style={s.formulaPart}>
                 <Text style={[s.formulaVal, { color: '#a6e3a1' }]}>{b.val}</Text>
                 <Text style={s.formulaLbl}>{b.nome}</Text>
+              </View>
+            </React.Fragment>
+          ))}
+          {weaponCastBonuses.map((b, i) => (
+            <React.Fragment key={`wc-${i}`}>
+              <Text style={s.formulaOp}>+</Text>
+              <View style={s.formulaPart}>
+                <Text style={[s.formulaVal, { color: '#89dceb' }]}>{b.val}</Text>
+                <Text style={s.formulaLbl}>{b.label}</Text>
               </View>
             </React.Fragment>
           ))}
@@ -1536,7 +1637,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
       })}
 
       {/* Habilidades de Arma que afetam Intensidade (cetros, varinhas) */}
-      {intensityWeapons.length > 0 && (
+      {magicWeapons.length > 0 && (
         <>
           <Text style={s.subLabel}>Empunhadura</Text>
           <View style={s.chipRow}>
@@ -1547,9 +1648,9 @@ function MagicPanel({ actionsLeft, onConfirm }) {
               <Text style={[s.chipText, twoHandMagic && s.chipTextActive]}>Duas mãos · Ascensão ×3</Text>
             </TouchableOpacity>
           </View>
-          <Text style={s.subLabel}>Habilidades de Arma — Intensidade</Text>
-          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
-          {intensityWeapons.map(w => (
+          <Text style={s.subLabel}>Habilidades de Arma Mágica</Text>
+          <Text style={s.hint}>Cada nível custa 1 Energia · Serenidade soma no teste, Ascensão na intensidade</Text>
+          {magicWeapons.map(w => (
             <View key={w.slotKey}>
               <Text style={s.weaponGroupLabel}>🪄 {w.weaponNome}</Text>
               {w.skills.map(sk => {
