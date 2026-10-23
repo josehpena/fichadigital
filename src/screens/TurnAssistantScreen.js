@@ -201,10 +201,14 @@ function MiraPanel({ damageTypes, tipoAlvo, setTipoAlvo, alvoId, setAlvoId, objT
 }
 
 
-const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
 // Fallback para os 8 níveis de magia com "custo": null nos dados.
 // Valores = custo predominante de cada nível nas trilhas (2 / 3 / 5).
 const DEFAULT_MANA_COST   = { 1: 2, 2: 3, 3: 5 };
+const DEFAULT_DIFICULDADE = { 1: 15, 2: 25, 3: 30 };
+
+// Só tiras de Força entram no dano físico base. Destreza (tira) vai para o acerto
+// de armas de distância; os demais atributos não somam ao dano.
+const DAMAGE_ATTR_TIRA_KEYS = ['forca'];
 const DEFAULT_DURACAO     = {
   1: '1 cena / 3 turnos',
   2: 'Semanas / 5 turnos',
@@ -616,6 +620,8 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
           bump(acertoAcc, `${ATTRIBUTE_LABELS.destreza} (tira)`, t.valor);
           continue;
         }
+        // Dos atributos, só os listados somam no dano base (hoje: Força).
+        if (!DAMAGE_ATTR_TIRA_KEYS.includes(t.subAttr)) continue;
         const mult = (twoHand && t.subAttr === 'forca') ? 2 : 1;
         const nome = ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr;
         bump(dmgAcc, mult > 1 ? `${nome}×2 (tira)` : `${nome} (tira)`, t.valor * mult);

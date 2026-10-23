@@ -21,14 +21,6 @@ const STATUS_FORMULA = {
 
 const STATUS_BASE = { vida: 10 };
 
-// Sub-atributos relevantes por status (para filtrar tiras de atributo)
-const STATUS_ATTR_DEPS = {
-  vida:           ['forca', 'destreza', 'vigor'],
-  energia:        ['vigor', 'percepcao'],
-  mana:           ['inteligencia', 'etiqueta'],
-  forcaDeVontade: ['forca', 'carisma'],
-};
-
 function getStatusBreakdown(statusKey, character) {
   const parts = [];
 
@@ -59,23 +51,32 @@ function getStatusBreakdown(statusKey, character) {
   }
 
   // ── Tiras de couro em itens equipados ─────────────────────────────────────
+  // Multiplicador de cada atributo neste status (ex: Vigor conta ×2 na Energia)
+  const attrMult = {};
+  for (const [, sub, mult = 1] of (STATUS_FORMULA[statusKey] ?? [])) attrMult[sub] = mult;
+
   const allSlots = [...ARMOR_SLOTS, ...HAND_SLOTS];
-  const deps = STATUS_ATTR_DEPS[statusKey] ?? [];
   for (const slotKey of allSlots) {
     const slot = character.equipment?.[slotKey];
-    if (!slot) continue;
+    if (!slot || slot.durabilidade === 0) continue;
     for (const t of (slot.tiras ?? [])) {
-      if (t.tipo === 'atributo' && deps.includes(t.subAttr) && t.valor) {
-        parts.push({ label: `${slot.nome || slotKey} (${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr})`, val: t.valor, source: 'tira' });
+      if (t.tipo === 'atributo' && attrMult[t.subAttr] != null && t.valor) {
+        const mult = attrMult[t.subAttr];
+        const suffix = mult > 1 ? ` ×${mult}` : '';
+        parts.push({ label: `${slot.nome || slotKey} (${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr}${suffix})`, val: t.valor * mult, source: 'tira' });
       } else if (t.tipo === 'status' && t.statusKey === statusKey && t.valor) {
         parts.push({ label: slot.nome || slotKey, val: t.valor, source: 'tira' });
       }
     }
   }
-  // Tiras de status em acessórios
+  // Tiras em acessórios (sem durabilidade)
   for (const acc of (character.accessories ?? [])) {
     for (const t of (acc.tiras ?? [])) {
-      if (t.tipo === 'status' && t.statusKey === statusKey && t.valor) {
+      if (t.tipo === 'atributo' && attrMult[t.subAttr] != null && t.valor) {
+        const mult = attrMult[t.subAttr];
+        const suffix = mult > 1 ? ` ×${mult}` : '';
+        parts.push({ label: `${acc.nome || 'Acessório'} (${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr}${suffix})`, val: t.valor * mult, source: 'tira' });
+      } else if (t.tipo === 'status' && t.statusKey === statusKey && t.valor) {
         parts.push({ label: acc.nome || 'Acessório', val: t.valor, source: 'tira' });
       }
     }

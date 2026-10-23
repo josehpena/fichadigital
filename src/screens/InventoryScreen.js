@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput, StyleSheet, Switch, Alert, Modal,
+  TextInput, StyleSheet, Alert, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
@@ -127,6 +127,9 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
   // Seleção de slot para equipar
   const [showEquip, setShowEquip] = useState(false);
 
+  // Mover para outro armazenamento
+  const [showMove, setShowMove] = useState(false);
+
   function resetTiraForm() { setTiraKey(''); setTiraVal(1); setTiraTexto(''); }
 
   function addTira() {
@@ -149,7 +152,7 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
 
   useEffect(() => {
     if (!visible) return;
-    setShowEquip(false); resetTiraForm();
+    setShowEquip(false); setShowMove(false); resetTiraForm();
     setPFormKey(''); setPFormVal(1); setPFormTexto(''); setPFormOpen(false);
     if (isNew) {
       setStep('type'); setTipo('pocao');
@@ -264,6 +267,33 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
     dispatch(storageId
       ? { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', storageId, index, accIndex }
       : { type: 'EQUIP_ACCESSORY_FROM_INVENTORY', section,   index, accIndex });
+    onClose();
+  }
+
+  // ── Mover item entre armazenamentos ──
+  const countFree = (container) => {
+    const cap = container.capacidade ?? 0;
+    let n = 0;
+    for (let i = 0; i < cap; i++) {
+      if (!container.itens?.[i]?.nome) n++;
+    }
+    return n;
+  };
+
+  const currentLoc = storageId ?? section;
+  const moveDestinos = [
+    { key: 'bolsa', label: '🎒 Bolsa', to: { section: 'bolsa' }, free: countFree(character.inventory?.bolsa ?? {}) },
+    ...((character.inventory?.storages ?? [])
+      .filter(s => s.tipo !== 'aljava')
+      .map(s => ({ key: s.id, label: `${s.icone} ${s.nome}`, to: { storageId: s.id }, free: countFree(s) }))),
+  ].filter(d => (d.to.storageId ?? d.to.section) !== currentLoc);
+
+  function moveTo(dest) {
+    dispatch({
+      type: 'INVENTORY_MOVE_ITEM',
+      from: storageId ? { storageId, index } : { section, index },
+      to: dest.to,
+    });
     onClose();
   }
 
@@ -715,6 +745,32 @@ function ItemModal({ visible, item, index, section, storageId, onClose }) {
                 ) : null
               )}
 
+              {/* Mover para outro armazenamento */}
+              {!isNew && moveDestinos.length > 0 && (
+                <View style={styles.moveSection}>
+                  <TouchableOpacity style={styles.moveToggleBtn} onPress={() => setShowMove(v => !v)}>
+                    <Text style={styles.moveToggleText}>
+                      📦 Mover para outra bolsa {showMove ? '▲' : '▼'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showMove && moveDestinos.map(d => (
+                    <TouchableOpacity
+                      key={d.key}
+                      style={[styles.moveDestBtn, d.free === 0 && styles.moveDestBtnOff]}
+                      disabled={d.free === 0}
+                      onPress={() => moveTo(d)}
+                    >
+                      <Text style={[styles.moveDestText, d.free === 0 && styles.moveDestTextOff]}>
+                        {d.label}
+                      </Text>
+                      <Text style={styles.moveDestFree}>
+                        {d.free === 0 ? 'cheia' : `${d.free} ${d.free === 1 ? 'espaço' : 'espaços'}`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
               {/* Ações */}
               <View style={styles.itemModalActions}>
                 {!isNew && (
@@ -1026,23 +1082,386 @@ function StorageSection({ storage, dispatch }) {
   );
 }
 
+// ── Aljava (munições) ─────────────────────────────────────────────────────────
+
+function MunicaoModal({ visible, municao, maxQtd, onSave, onDelete, onClose }) {
+  const isNew = !municao;
+  const [nome, setNome]     = useState('');
+  const [nivel, setNivel]   = useState(1);
+  const [qtd, setQtd]       = useState(1);
+  const [efeito, setEfeito] = useState('');
+  const [slots, setSlots]   = useState([]);
+
+  useEffect(() => {
+    if (visible) {
+      setNome(municao?.nome ?? '');
+      setNivel(municao?.nivel ?? 1);
+      setQtd(municao ? (municao.quantidade ?? 0) : Math.min(1, maxQtd));
+      setEfeito(municao?.efeito ?? '');
+      setSlots(municao?.venenoSlots ?? []);
+    }
+  }, [visible, municao]);
+
+  function save() {
+    if (!nome.trim()) return;
+    onSave({
+      nome: nome.trim(),
+      nivel,
+      quantidade: qtd,
+      efeito: efeito.trim(),
+      venenoSlots: slots,
+    });
+    onClose();
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <Text style={styles.modalTitle}>{isNew ? 'Nova Munição' : 'Editar Munição'}</Text>
+
+          <Text style={styles.modalLabel}>Nome</Text>
+          <TextInput
+            style={styles.modalInput}
+            value={nome}
+            onChangeText={setNome}
+            placeholder="Ex: Dardo, Flecha..."
+            placeholderTextColor="#45475a"
+            autoFocus={isNew}
+          />
+
+          <NumStepper label="Nível" value={nivel} onChange={setNivel} min={1} />
+          <NumStepper
+            label={`Quantidade (máx ${maxQtd})`}
+            value={qtd}
+            onChange={(v) => setQtd(Math.min(v, maxQtd))}
+          />
+          <NumStepper
+            label="Slots de veneno"
+            value={slots.length}
+            onChange={(v) => setSlots(s => (v > s.length ? [...s, null] : s.slice(0, v)))}
+          />
+
+          <Text style={styles.modalLabel}>Efeito</Text>
+          <TextInput
+            style={[styles.modalInput, { minHeight: 60, textAlignVertical: 'top' }]}
+            value={efeito}
+            onChangeText={setEfeito}
+            placeholder="Ex: +2 dano perfurante..."
+            placeholderTextColor="#45475a"
+            multiline
+          />
+
+          <View style={styles.modalBtns}>
+            {!isNew && (
+              <TouchableOpacity
+                style={styles.munDeleteBtn}
+                onPress={() => { onDelete(); onClose(); }}
+              >
+                <Text style={styles.munDeleteBtnText}>🗑</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmBtn, !nome.trim() && { opacity: 0.4 }]}
+              onPress={save}
+              disabled={!nome.trim()}
+            >
+              <Text style={styles.confirmBtnText}>Salvar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function VenenoModal({ visible, municao, slotIndex, onSave, onRemoveSlot, onClose }) {
+  const veneno = municao?.venenoSlots?.[slotIndex] ?? null;
+  const [nome, setNome]     = useState('');
+  const [efeito, setEfeito] = useState('');
+
+  useEffect(() => {
+    if (visible) {
+      setNome(veneno?.nome ?? '');
+      setEfeito(veneno?.efeito ?? '');
+    }
+  }, [visible, municao, slotIndex]);
+
+  function save() {
+    // Nome vazio limpa o veneno do slot (slot continua existindo)
+    onSave(nome.trim() ? { nome: nome.trim(), efeito: efeito.trim() } : null);
+    onClose();
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <Text style={styles.modalTitle}>🧪 Veneno</Text>
+
+          <Text style={styles.modalLabel}>Tipo de veneno</Text>
+          <TextInput
+            style={styles.modalInput}
+            value={nome}
+            onChangeText={setNome}
+            placeholder="Ex: Veneno paralisante..."
+            placeholderTextColor="#45475a"
+            autoFocus={!veneno}
+          />
+
+          <Text style={styles.modalLabel}>Efeito</Text>
+          <TextInput
+            style={[styles.modalInput, { minHeight: 60, textAlignVertical: 'top' }]}
+            value={efeito}
+            onChangeText={setEfeito}
+            placeholder="Ex: Paralisia por 1 turno..."
+            placeholderTextColor="#45475a"
+            multiline
+          />
+
+          <Text style={styles.venenoHint}>Salvar com o nome vazio limpa o veneno do slot.</Text>
+
+          <View style={styles.modalBtns}>
+            <TouchableOpacity
+              style={styles.munDeleteBtn}
+              onPress={() => { onRemoveSlot(); onClose(); }}
+            >
+              <Text style={styles.munDeleteBtnText}>Remover slot</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmBtn} onPress={save}>
+              <Text style={styles.confirmBtnText}>Salvar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AljavaSection({ storage, dispatch }) {
+  const [editing, setEditing]     = useState(false);
+  const [editNome, setEditNome]   = useState(storage.nome);
+  const [editIcone, setEditIcone] = useState(storage.icone);
+  const [munModal, setMunModal]   = useState(null); // { municao: obj|null }
+  const [venModal, setVenModal]   = useState(null); // { municaoId, slotIndex }
+
+  const municoes = storage.municoes ?? [];
+  const totalMun = municoes.reduce((sum, m) => sum + (m.quantidade || 0), 0);
+  const cap      = storage.capacidade ?? 20;
+  const cheia    = totalMun >= cap;
+
+  function changeCapacity(delta) {
+    if (delta < 0 && cap - 1 < totalMun) {
+      Alert.alert('Aljava cheia', 'Remova munições antes de diminuir a capacidade.');
+      return;
+    }
+    dispatch({ type: 'INVENTORY_SET_STORAGE_CAPACITY', storageId: storage.id, delta });
+  }
+
+  function saveEdit() {
+    dispatch({ type: 'INVENTORY_RENAME_STORAGE', storageId: storage.id, nome: editNome, icone: editIcone });
+    setEditing(false);
+  }
+
+  function confirmDelete() {
+    Alert.alert(
+      'Remover armazenamento',
+      `"${storage.nome}" será removido permanentemente. Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Remover', style: 'destructive', onPress: () => dispatch({ type: 'INVENTORY_REMOVE_STORAGE', storageId: storage.id }) },
+      ]
+    );
+  }
+
+  function updateMunicao(municaoId, changes) {
+    dispatch({ type: 'ALJAVA_UPDATE_MUNICAO', storageId: storage.id, municaoId, changes });
+  }
+
+  const venMunicao = venModal ? municoes.find(m => m.id === venModal.municaoId) : null;
+
+  return (
+    <View style={styles.storageSection}>
+      {/* Header */}
+      {editing ? (
+        <View style={styles.editRow}>
+          <TextInput
+            style={styles.editIconInput}
+            value={editIcone}
+            onChangeText={setEditIcone}
+            maxLength={2}
+          />
+          <TextInput
+            style={[styles.editNameInput, { flex: 1 }]}
+            value={editNome}
+            onChangeText={setEditNome}
+            autoFocus
+          />
+          <TouchableOpacity style={styles.editSaveBtn} onPress={saveEdit}>
+            <Text style={styles.editSaveBtnText}>✓</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setEditing(false)} style={{ padding: 6 }}>
+            <Text style={{ color: '#45475a', fontSize: 14 }}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{storage.icone} {storage.nome}</Text>
+          <View style={styles.sectionRight}>
+            <Text style={[styles.capacityText, cheia && styles.capacityTextFull]}>
+              {totalMun}/{cap} munições
+            </Text>
+            <TouchableOpacity style={styles.smallBtn} onPress={() => changeCapacity(-1)}>
+              <Text style={styles.smallBtnText}>−</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.smallBtn} onPress={() => changeCapacity(1)}>
+              <Text style={styles.smallBtnText}>+</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.editBtn} onPress={() => { setEditNome(storage.nome); setEditIcone(storage.icone); setEditing(true); }}>
+              <Text style={styles.editBtnText}>✏️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.deleteBtn} onPress={confirmDelete}>
+              <Text style={styles.deleteBtnText}>🗑</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {municoes.length === 0 && (
+        <Text style={styles.aljavaEmpty}>Nenhuma munição na aljava</Text>
+      )}
+
+      {municoes.map(m => (
+        <View key={m.id} style={styles.munCard}>
+          <View style={styles.munHeader}>
+            <TouchableOpacity style={{ flex: 1 }} onPress={() => setMunModal({ municao: m })}>
+              <Text style={styles.munNome}>
+                {m.nome}  <Text style={styles.munNivel}>Nv {m.nivel}</Text>
+              </Text>
+              {!!m.efeito && <Text style={styles.munEfeito}>{m.efeito}</Text>}
+            </TouchableOpacity>
+            <View style={styles.munQtyControls}>
+              <TouchableOpacity
+                style={styles.munQtyBtn}
+                onPress={() => dispatch({ type: 'ALJAVA_CHANGE_QTY', storageId: storage.id, municaoId: m.id, delta: -1 })}
+              >
+                <Text style={styles.munQtyBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={[styles.munQty, (m.quantidade || 0) === 0 && styles.munQtyZero]}>
+                {m.quantidade || 0}
+              </Text>
+              <TouchableOpacity
+                style={[styles.munQtyBtn, cheia && styles.munQtyBtnOff]}
+                disabled={cheia}
+                onPress={() => dispatch({ type: 'ALJAVA_CHANGE_QTY', storageId: storage.id, municaoId: m.id, delta: 1 })}
+              >
+                <Text style={[styles.munQtyBtnText, cheia && styles.munQtyBtnTextOff]}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {(m.venenoSlots ?? []).length > 0 && (
+            <View style={styles.venenoRow}>
+              {(m.venenoSlots ?? []).map((v, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.venenoChip, v && styles.venenoChipFilled]}
+                  onPress={() => setVenModal({ municaoId: m.id, slotIndex: i })}
+                >
+                  <Text style={[styles.venenoChipText, v && styles.venenoChipTextFilled]}>
+                    🧪 {v ? v.nome : 'vazio'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {(m.venenoSlots ?? []).map((v, i) => (
+            v?.efeito ? (
+              <Text key={`ef-${i}`} style={styles.venenoEfeito}>🧪 {v.nome}: {v.efeito}</Text>
+            ) : null
+          ))}
+        </View>
+      ))}
+
+      <TouchableOpacity style={styles.addMunBtn} onPress={() => setMunModal({ municao: null })}>
+        <Text style={styles.addMunBtnText}>+ Adicionar munição</Text>
+      </TouchableOpacity>
+
+      <MunicaoModal
+        visible={!!munModal}
+        municao={munModal?.municao ?? null}
+        maxQtd={Math.max(0, cap - totalMun + (munModal?.municao?.quantidade || 0))}
+        onSave={(data) => {
+          if (munModal?.municao) {
+            updateMunicao(munModal.municao.id, data);
+          } else {
+            dispatch({ type: 'ALJAVA_ADD_MUNICAO', storageId: storage.id, municao: data });
+          }
+        }}
+        onDelete={() => {
+          if (munModal?.municao) {
+            dispatch({ type: 'ALJAVA_REMOVE_MUNICAO', storageId: storage.id, municaoId: munModal.municao.id });
+          }
+        }}
+        onClose={() => setMunModal(null)}
+      />
+
+      <VenenoModal
+        visible={!!venModal}
+        municao={venMunicao}
+        slotIndex={venModal?.slotIndex ?? 0}
+        onSave={(veneno) => {
+          if (!venMunicao) return;
+          const slots = [...(venMunicao.venenoSlots ?? [])];
+          slots[venModal.slotIndex] = veneno;
+          updateMunicao(venMunicao.id, { venenoSlots: slots });
+        }}
+        onRemoveSlot={() => {
+          if (!venMunicao) return;
+          const slots = (venMunicao.venenoSlots ?? []).filter((_, i) => i !== venModal.slotIndex);
+          updateMunicao(venMunicao.id, { venenoSlots: slots });
+        }}
+        onClose={() => setVenModal(null)}
+      />
+    </View>
+  );
+}
+
 // ── New Storage Modal ─────────────────────────────────────────────────────────
-const PRESET_ICONS = ['📦', '🎒', '🧳', '💼', '🗃', '🛍', '🏺', '⚗️', '🗝', '🧰'];
+const PRESET_ICONS = ['📦', '🎒', '🧳', '💼', '🗃', '🛍', '🏺', '⚗️', '🗝', '🧰', '🏹'];
 
 function NewStorageModal({ visible, onClose, dispatch }) {
   const [nome, setNome]     = useState('');
   const [icone, setIcone]   = useState('📦');
   const [cap, setCap]       = useState('6');
+  const [tipo, setTipo]     = useState('padrao'); // 'padrao' | 'aljava'
+
+  function selectTipo(t) {
+    setTipo(t);
+    if (t === 'aljava' && icone === '📦') setIcone('🏹');
+    if (t === 'padrao' && icone === '🏹') setIcone('📦');
+    if (t === 'aljava' && cap === '6')  setCap('20');
+    if (t === 'padrao' && cap === '20') setCap('6');
+  }
 
   function handleCreate() {
-    const capacidade = Math.max(1, Math.min(40, parseInt(cap, 10) || 6));
+    const capacidade = tipo === 'aljava'
+      ? Math.max(1, Math.min(99, parseInt(cap, 10) || 20))
+      : Math.max(1, Math.min(40, parseInt(cap, 10) || 6));
     dispatch({
       type: 'INVENTORY_ADD_STORAGE',
-      nome: nome.trim() || 'Armazenamento',
+      nome: nome.trim() || (tipo === 'aljava' ? 'Aljava' : 'Armazenamento'),
       icone,
       capacidade,
+      tipo,
     });
-    setNome(''); setIcone('📦'); setCap('6');
+    setNome(''); setIcone('📦'); setCap('6'); setTipo('padrao');
     onClose();
   }
 
@@ -1051,6 +1470,27 @@ function NewStorageModal({ visible, onClose, dispatch }) {
       <View style={styles.modalOverlay}>
         <View style={styles.modalSheet}>
           <Text style={styles.modalTitle}>Novo Armazenamento</Text>
+
+          <Text style={styles.modalLabel}>Tipo</Text>
+          <View style={styles.tipoRow}>
+            <TouchableOpacity
+              style={[styles.tipoBtn, tipo === 'padrao' && styles.tipoBtnActive]}
+              onPress={() => selectTipo('padrao')}
+            >
+              <Text style={[styles.tipoBtnText, tipo === 'padrao' && styles.tipoBtnTextActive]}>📦 Padrão</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tipoBtn, tipo === 'aljava' && styles.tipoBtnActive]}
+              onPress={() => selectTipo('aljava')}
+            >
+              <Text style={[styles.tipoBtnText, tipo === 'aljava' && styles.tipoBtnTextActive]}>🏹 Aljava</Text>
+            </TouchableOpacity>
+          </View>
+          {tipo === 'aljava' && (
+            <Text style={styles.tipoHint}>
+              Guarda munições com nível, efeito, quantidade e slots de veneno. A capacidade limita o total de unidades.
+            </Text>
+          )}
 
           <Text style={styles.modalLabel}>Ícone</Text>
           <View style={styles.iconRow}>
@@ -1070,18 +1510,20 @@ function NewStorageModal({ visible, onClose, dispatch }) {
             style={styles.modalInput}
             value={nome}
             onChangeText={setNome}
-            placeholder="Ex: Mochila de Couro..."
+            placeholder={tipo === 'aljava' ? 'Ex: Aljava de Caça...' : 'Ex: Mochila de Couro...'}
             placeholderTextColor="#45475a"
             autoFocus
           />
 
-          <Text style={styles.modalLabel}>Capacidade inicial</Text>
+          <Text style={styles.modalLabel}>
+            {tipo === 'aljava' ? 'Capacidade (total de munições)' : 'Capacidade inicial'}
+          </Text>
           <TextInput
             style={styles.modalInput}
             value={cap}
             onChangeText={setCap}
             keyboardType="number-pad"
-            placeholder="6"
+            placeholder={tipo === 'aljava' ? '20' : '6'}
             placeholderTextColor="#45475a"
           />
 
@@ -1114,7 +1556,6 @@ export default function InventoryScreen() {
   };
 
   const bolsaSlots = inv.bolsa.itens.slice(0, inv.bolsa.capacidade);
-  const cintoSlots = inv.cinto.itens;
   const moedas     = inv.moedas ?? 0;
   const storages   = inv.storages ?? [];
 
@@ -1212,30 +1653,11 @@ export default function InventoryScreen() {
 
       <View style={styles.divider} />
 
-      {/* ── Cinto de Utilidades ── */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>🔧 Cinto de Utilidades</Text>
-        <Switch
-          value={inv.cinto.ativo}
-          onValueChange={() => dispatch({ type: 'INVENTORY_TOGGLE_CINTO' })}
-          trackColor={{ false: '#313244', true: '#1d4d3a' }}
-          thumbColor={inv.cinto.ativo ? '#a6e3a1' : '#6c7086'}
-        />
-      </View>
-
-      {inv.cinto.ativo && (
-        <View style={styles.grid}>
-          {cintoSlots.map((item, i) => (
-            <ItemSlot key={i} index={i} item={item} section="cinto" placeholder={`Slot ${i + 1}`} />
-          ))}
-        </View>
-      )}
-
-      <View style={styles.divider} />
-
       {/* ── Armazenamentos customizados ── */}
       {storages.map(storage => (
-        <StorageSection key={storage.id} storage={storage} dispatch={dispatch} />
+        storage.tipo === 'aljava'
+          ? <AljavaSection  key={storage.id} storage={storage} dispatch={dispatch} />
+          : <StorageSection key={storage.id} storage={storage} dispatch={dispatch} />
       ))}
 
       <TouchableOpacity style={styles.newStorageBtn} onPress={() => setShowNewStorage(true)}>
@@ -1386,6 +1808,23 @@ const styles = StyleSheet.create({
   stepperBtnText: { color: '#cdd6f4', fontSize: 16, fontWeight: '700', lineHeight: 20 },
   stepperVal:     { color: '#cdd6f4', fontSize: 15, fontWeight: '700', minWidth: 24, textAlign: 'center' },
 
+  // Mover item
+  moveSection: { marginBottom: 6 },
+  moveToggleBtn: {
+    borderRadius: 8, borderWidth: 1, borderColor: '#313244', borderStyle: 'dashed',
+    paddingVertical: 9, alignItems: 'center', marginBottom: 6,
+  },
+  moveToggleText: { color: '#89b4fa', fontSize: 12, fontWeight: '700' },
+  moveDestBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#181825', borderRadius: 8, borderWidth: 1, borderColor: '#313244',
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6,
+  },
+  moveDestBtnOff:   { opacity: 0.45 },
+  moveDestText:     { color: '#cdd6f4', fontSize: 13, fontWeight: '600' },
+  moveDestTextOff:  { color: '#6c7086' },
+  moveDestFree:     { color: '#6c7086', fontSize: 11 },
+
   // Ações
   itemModalActions:{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 8 },
   itemModalClearBtn: {
@@ -1465,6 +1904,61 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   newStorageBtnText: { color: '#6c7086', fontSize: 14, fontWeight: '700' },
+
+  // Aljava
+  aljavaEmpty: { color: '#45475a', fontSize: 12, fontStyle: 'italic', marginBottom: 8 },
+  munCard: {
+    backgroundColor: '#1e1e2e', borderRadius: 10,
+    borderWidth: 1, borderColor: '#313244',
+    padding: 10, marginBottom: 8,
+  },
+  munHeader:      { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  munNome:        { color: '#cdd6f4', fontSize: 14, fontWeight: '700' },
+  munNivel:       { color: '#f9e2af', fontSize: 12, fontWeight: '700' },
+  munEfeito:      { color: '#6c7086', fontSize: 11, marginTop: 2 },
+  munQtyControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  munQtyBtn: {
+    width: 34, height: 34, borderRadius: 8, backgroundColor: '#2a2a3e',
+    borderWidth: 1, borderColor: '#45475a',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  munQtyBtnText: { color: '#cdd6f4', fontSize: 18, fontWeight: '700', lineHeight: 22 },
+  munQtyBtnOff:  { opacity: 0.35 },
+  munQtyBtnTextOff: { color: '#6c7086' },
+  munQty:        { color: '#f9e2af', fontSize: 18, fontWeight: 'bold', minWidth: 28, textAlign: 'center' },
+  munQtyZero:    { color: '#f38ba8' },
+  capacityTextFull: { color: '#f38ba8', fontWeight: '700' },
+
+  venenoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  venenoChip: {
+    borderRadius: 6, borderWidth: 1, borderColor: '#313244', borderStyle: 'dashed',
+    paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#181825',
+  },
+  venenoChipFilled:     { borderStyle: 'solid', borderColor: '#a6e3a1', backgroundColor: '#1d3a2f' },
+  venenoChipText:       { color: '#6c7086', fontSize: 11, fontWeight: '600' },
+  venenoChipTextFilled: { color: '#a6e3a1' },
+  venenoEfeito:         { color: '#a6e3a1', fontSize: 11, marginTop: 6, lineHeight: 15 },
+  venenoHint:           { color: '#45475a', fontSize: 11, fontStyle: 'italic', marginBottom: 10 },
+
+  addMunBtn: {
+    borderRadius: 8, borderWidth: 1, borderColor: '#45475a', borderStyle: 'dashed',
+    paddingVertical: 10, alignItems: 'center', marginTop: 2,
+  },
+  addMunBtnText: { color: '#6c7086', fontSize: 13, fontWeight: '700' },
+
+  munDeleteBtn:     { flex: 1, backgroundColor: '#45273a', borderRadius: 10, padding: 13, alignItems: 'center' },
+  munDeleteBtnText: { color: '#f38ba8', fontSize: 14, fontWeight: '700' },
+
+  tipoRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  tipoBtn: {
+    flex: 1, backgroundColor: '#181825', borderRadius: 10,
+    borderWidth: 1, borderColor: '#313244',
+    paddingVertical: 10, alignItems: 'center',
+  },
+  tipoBtnActive:     { borderColor: '#89b4fa', backgroundColor: '#1d3052' },
+  tipoBtnText:       { color: '#6c7086', fontSize: 13, fontWeight: '600' },
+  tipoBtnTextActive: { color: '#89b4fa' },
+  tipoHint:          { color: '#45475a', fontSize: 11, fontStyle: 'italic', marginBottom: 12, marginTop: -6 },
 
   // New storage modal
   modalOverlay: {

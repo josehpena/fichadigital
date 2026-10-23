@@ -50,24 +50,29 @@ const ATTR_STATUS_IMPACT = {
   inteligencia: { mana: 1 },
 };
 
-// Bônus de status vindos de tiras 'status' em equipamentos e acessórios equipados
+// Bônus de status vindos de tiras em equipamentos e acessórios equipados.
+// Tiras 'status' somam direto ao teto; tiras 'atributo' somam via ATTR_STATUS_IMPACT
+// (ex: tira de +2 Vigor → +2 Vida e +4 Energia), igual aos efeitos narrativos.
 function computeEquipTirasBonuses(equipment = {}, accessories = []) {
   const result = {};
+  const applyTira = (t) => {
+    if (!t.valor) return;
+    if (t.tipo === 'status' && t.statusKey) {
+      result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
+    } else if (t.tipo === 'atributo' && t.subAttr) {
+      const impacts = ATTR_STATUS_IMPACT[t.subAttr] ?? {};
+      for (const [statusKey, mult] of Object.entries(impacts)) {
+        result[statusKey] = (result[statusKey] || 0) + t.valor * mult;
+      }
+    }
+  };
   for (const slot of [...ARMOR_SLOTS, ...HAND_SLOTS]) {
     const item = equipment[slot];
     if (!item || item.durabilidade === 0) continue;
-    for (const t of (item.tiras ?? [])) {
-      if (t.tipo === 'status' && t.statusKey && t.valor) {
-        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
-      }
-    }
+    for (const t of (item.tiras ?? [])) applyTira(t);
   }
   for (const acc of accessories) {
-    for (const t of (acc.tiras ?? [])) {
-      if (t.tipo === 'status' && t.statusKey && t.valor) {
-        result[t.statusKey] = (result[t.statusKey] || 0) + t.valor;
-      }
-    }
+    for (const t of (acc.tiras ?? [])) applyTira(t);
   }
   return result;
 }
@@ -197,6 +202,7 @@ function reducer(state, action) {
         inventory:        p.inventory        ?? INITIAL_CHARACTER.inventory,
         narrativeEffects: p.narrativeEffects ?? INITIAL_CHARACTER.narrativeEffects,
         journal:          p.journal          ?? INITIAL_CHARACTER.journal,
+        pets:             p.pets             ?? INITIAL_CHARACTER.pets,
         settings,
       };
     }
@@ -945,17 +951,25 @@ function reducer(state, action) {
       return { ...state, inventory: { ...state.inventory, bolsa: { ...bolsa, capacidade: bolsa.capacidade - 1 } } };
     }
 
-    // { nome, icone, capacidade }
+    // { nome, icone, capacidade, tipo? } — tipo 'aljava' cria armazenamento de munições
     case 'INVENTORY_ADD_STORAGE': {
       const id = `storage_${Date.now()}`;
-      const cap = action.capacidade ?? 6;
-      const newStorage = {
-        id,
-        nome: action.nome ?? 'Armazenamento',
-        icone: action.icone ?? '📦',
-        capacidade: cap,
-        itens: Array.from({ length: 40 }, () => ({ nome: '', obs: '' })),
-      };
+      const newStorage = action.tipo === 'aljava'
+        ? {
+            id,
+            nome: action.nome ?? 'Aljava',
+            icone: action.icone ?? '🏹',
+            tipo: 'aljava',
+            capacidade: action.capacidade ?? 20, // máximo de unidades somando todas as munições
+            municoes: [], // [{ id, nome, nivel, quantidade, efeito, venenoSlots: [{nome, efeito}|null] }]
+          }
+        : {
+            id,
+            nome: action.nome ?? 'Armazenamento',
+            icone: action.icone ?? '📦',
+            capacidade: action.capacidade ?? 6,
+            itens: Array.from({ length: 40 }, () => ({ nome: '', obs: '' })),
+          };
       const storages = [...(state.inventory.storages ?? []), newStorage];
       return { ...state, inventory: { ...state.inventory, storages } };
     }
@@ -983,6 +997,13 @@ function reducer(state, action) {
     case 'INVENTORY_SET_STORAGE_CAPACITY': {
       const storages = (state.inventory.storages ?? []).map(s => {
         if (s.id !== action.storageId) return s;
+        if (s.tipo === 'aljava') {
+          // Capacidade em unidades de munição; não reduz abaixo do total atual
+          const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
+          const cap = Math.max(1, Math.min(99, (s.capacidade ?? 20) + action.delta));
+          if (action.delta < 0 && cap < total) return s;
+          return { ...s, capacidade: cap };
+        }
         const cap = Math.max(1, Math.min(40, s.capacidade + action.delta));
         // Se está diminuindo, bloqueia se o último slot estiver ocupado
         if (action.delta < 0 && s.itens[s.capacidade - 1]?.nome) return s;
@@ -998,6 +1019,125 @@ function reducer(state, action) {
         const newItens = [...s.itens];
         newItens[action.index] = { ...newItens[action.index], [action.field]: action.value };
         return { ...s, itens: newItens };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { from: { section?|storageId?, index }, to: { section?|storageId? } }
+    // Move um item para o primeiro slot livre do destino (bolsa ou armazenamento padrão)
+    case 'INVENTORY_MOVE_ITEM': {
+      const inv = state.inventory;
+      const readLoc = (loc) => {
+        if (loc.storageId) {
+          const st = (inv.storages ?? []).find(s => s.id === loc.storageId);
+          return st ? { itens: st.itens ?? [], cap: st.capacidade ?? 0 } : null;
+        }
+        const sec = inv[loc.section];
+        return sec ? { itens: sec.itens ?? [], cap: sec.capacidade ?? (sec.itens?.length ?? 0) } : null;
+      };
+      const src = readLoc(action.from);
+      const dst = readLoc(action.to);
+      if (!src || !dst) return state;
+
+      const item = src.itens[action.from.index];
+      if (!item?.nome) return state;
+
+      let free = -1;
+      for (let i = 0; i < dst.cap; i++) {
+        if (!dst.itens[i]?.nome) { free = i; break; }
+      }
+      if (free < 0) return state; // destino cheio
+
+      const emptyItem = { nome: '', obs: '' };
+      const writeLoc = (invAcc, loc, itens) => {
+        if (loc.storageId) {
+          return { ...invAcc, storages: (invAcc.storages ?? []).map(s => s.id === loc.storageId ? { ...s, itens } : s) };
+        }
+        return { ...invAcc, [loc.section]: { ...invAcc[loc.section], itens } };
+      };
+
+      const sameContainer = (action.from.storageId ?? action.from.section) === (action.to.storageId ?? action.to.section);
+      let newInv;
+      if (sameContainer) {
+        const itens = [...src.itens];
+        itens[free] = { ...item };
+        itens[action.from.index] = emptyItem;
+        newInv = writeLoc(inv, action.from, itens);
+      } else {
+        const srcItens = [...src.itens];
+        srcItens[action.from.index] = emptyItem;
+        const dstItens = [...dst.itens];
+        dstItens[free] = { ...item };
+        newInv = writeLoc(writeLoc(inv, action.from, srcItens), action.to, dstItens);
+      }
+      return { ...state, inventory: newInv };
+    }
+
+    // ── Aljava (munições) ─────────────────────────────────────────────────────
+
+    // { storageId, municao: { nome, nivel, quantidade, efeito, venenoSlots } }
+    case 'ALJAVA_ADD_MUNICAO': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const cap   = s.capacidade ?? 20;
+        const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
+        const municao = {
+          id: `mun_${Date.now()}`,
+          nome: 'Munição', nivel: 1, quantidade: 0, efeito: '', venenoSlots: [],
+          ...action.municao,
+        };
+        // Quantidade limitada ao espaço livre da aljava
+        municao.quantidade = Math.max(0, Math.min(municao.quantidade || 0, cap - total));
+        return { ...s, municoes: [...(s.municoes ?? []), municao] };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, municaoId, changes }
+    case 'ALJAVA_UPDATE_MUNICAO': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const cap   = s.capacidade ?? 20;
+        const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
+        const municoes = (s.municoes ?? []).map(m => {
+          if (m.id !== action.municaoId) return m;
+          const next = { ...m, ...action.changes };
+          if (action.changes.quantidade !== undefined) {
+            // Espaço livre desconsiderando a própria munição
+            const maxQtd = Math.max(0, cap - (total - (m.quantidade || 0)));
+            next.quantidade = Math.max(0, Math.min(next.quantidade || 0, maxQtd));
+          }
+          return next;
+        });
+        return { ...s, municoes };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, municaoId }
+    case 'ALJAVA_REMOVE_MUNICAO': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        return { ...s, municoes: (s.municoes ?? []).filter(m => m.id !== action.municaoId) };
+      });
+      return { ...state, inventory: { ...state.inventory, storages } };
+    }
+
+    // { storageId, municaoId, delta }
+    case 'ALJAVA_CHANGE_QTY': {
+      const storages = (state.inventory.storages ?? []).map(s => {
+        if (s.id !== action.storageId) return s;
+        const cap   = s.capacidade ?? 20;
+        const total = (s.municoes ?? []).reduce((sum, m) => sum + (m.quantidade || 0), 0);
+        const livre = Math.max(0, cap - total);
+        const municoes = (s.municoes ?? []).map(m => {
+          if (m.id !== action.municaoId) return m;
+          let q = Math.max(0, (m.quantidade || 0) + action.delta);
+          // Aumentos limitados ao espaço livre da aljava
+          if (action.delta > 0) q = Math.min(q, (m.quantidade || 0) + livre);
+          return { ...m, quantidade: q };
+        });
+        return { ...s, municoes };
       });
       return { ...state, inventory: { ...state.inventory, storages } };
     }
@@ -1079,6 +1219,39 @@ function reducer(state, action) {
       );
       return { ...state, journal: { ...state.journal, entries } };
     }
+
+    // ── Pets ──────────────────────────────────────────────────────────────────
+
+    // { pet: { nome, icone, tipo } } — cria um novo pet com defaults
+    case 'PET_ADD': {
+      const pet = {
+        id: `pet_${Date.now()}`,
+        nome: 'Pet',
+        icone: '🐾',
+        tipo: 'domado',        // 'domado' | 'alma'
+        invocado: false,
+        vida: { current: 10, max: 10 },
+        mana: { current: 0, max: 0 },
+        caracteristicas: [],
+        equipamentos: [],
+        bolsas: [],
+        obs: '',
+        ...action.pet,
+      };
+      return { ...state, pets: [...(state.pets ?? []), pet] };
+    }
+
+    // { petId, changes } — merge raso no pet (usado para status, listas aninhadas, etc.)
+    case 'PET_UPDATE': {
+      const pets = (state.pets ?? []).map(p =>
+        p.id === action.petId ? { ...p, ...action.changes } : p
+      );
+      return { ...state, pets };
+    }
+
+    // { petId }
+    case 'PET_REMOVE':
+      return { ...state, pets: (state.pets ?? []).filter(p => p.id !== action.petId) };
 
     case 'RESET':
       return INITIAL_CHARACTER;

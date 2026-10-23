@@ -234,14 +234,15 @@ function SkillDetailModal({ detail, onClose }) {
 
   return (
     <Modal transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={[styles.modalSheet, insets.bottom > 0 && { paddingBottom: 32 + insets.bottom }]} onPress={() => {}}>
+      <View style={styles.modalOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.modalSheet, insets.bottom > 0 && { paddingBottom: 32 + insets.bottom }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>{skill.nome}</Text>
           {skill.descricao ? (
             <Text style={styles.modalDesc}>{skill.descricao}</Text>
           ) : null}
-          <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
             {Object.entries(skill.niveis).sort(([a],[b]) => +a - +b).map(([lvl, data]) => {
               const lvlNum = parseInt(lvl);
               const learned = lvlNum <= curLevel;
@@ -297,8 +298,8 @@ function SkillDetailModal({ detail, onClose }) {
           <TouchableOpacity style={styles.modalClose} onPress={onClose}>
             <Text style={styles.modalCloseText}>Fechar</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -482,7 +483,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { color: '#cdd6f4', fontSize: 18, fontWeight: 'bold', marginBottom: 6 },
   modalDesc:  { color: '#6c7086', fontSize: 12, marginBottom: 14, lineHeight: 18 },
-  modalScroll: { flexGrow: 0 },
+  modalScroll: { flexGrow: 0, flexShrink: 1 },
   nivelBlock: {
     backgroundColor: '#313244', borderRadius: 8, padding: 10, marginBottom: 8,
   },

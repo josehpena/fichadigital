@@ -15,9 +15,12 @@ import SkillTreeScreen     from './src/screens/SkillTreeScreen';
 import TitlesScreen        from './src/screens/TitlesScreen';
 import InventoryScreen     from './src/screens/InventoryScreen';
 import TurnAssistantScreen from './src/screens/TurnAssistantScreen';
+import PetsScreen          from './src/screens/PetsScreen';
+import SwipeTabs           from './src/components/SwipeTabs';
 import CustomizationModal  from './src/components/CustomizationModal';
 import RaceSelectionModal  from './src/components/RaceSelectionModal';
 import JournalModal        from './src/components/JournalModal';
+import OverviewModal       from './src/components/OverviewModal';
 import AdventuresScreen    from './src/screens/AdventuresScreen';
 import SheetSelectScreen   from './src/screens/SheetSelectScreen';
 import AuthScreen          from './src/screens/AuthScreen';
@@ -27,15 +30,34 @@ import { fullSync, startNetworkListener, stopNetworkListener } from './src/servi
 const Tab = createBottomTabNavigator();
 
 const TAB_ICONS = {
-  Status:      '❤️',
-  Atributos:   '⚔️',
-  Perícias:    '📖',
-  Equip:       '🛡️',
+  Personagem:  '📜',
+  Equipamento: '🛡️',
   Habilidades: '🌟',
-  Títulos:     '👑',
-  Inventário:  '🎒',
+  Pets:        '🐾',
   Turno:       '⚔️',
 };
+
+// ─── Seções agrupadas (subseções navegáveis por swipe) ───────────────────────
+
+const CHARACTER_PAGES = [
+  { key: 'status',    title: 'Status',    icon: '❤️', component: HomeScreen },
+  { key: 'atributos', title: 'Atributos', icon: '💪', component: AttributesScreen },
+  { key: 'pericias',  title: 'Perícias',  icon: '📖', component: SkillsScreen },
+];
+
+const GEAR_PAGES = [
+  { key: 'equip',      title: 'Equipamento', icon: '🛡️', component: EquipmentScreen },
+  { key: 'inventario', title: 'Inventário',  icon: '🎒', component: InventoryScreen },
+];
+
+const ABILITY_PAGES = [
+  { key: 'habilidades', title: 'Habilidades', icon: '🌟', component: SkillTreeScreen },
+  { key: 'titulos',     title: 'Títulos',     icon: '👑', component: TitlesScreen },
+];
+
+function CharacterSection() { return <SwipeTabs pages={CHARACTER_PAGES} />; }
+function GearSection()      { return <SwipeTabs pages={GEAR_PAGES} />; }
+function AbilitySection()   { return <SwipeTabs pages={ABILITY_PAGES} />; }
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -43,6 +65,7 @@ function AppContent() {
   const [selectedSheet, setSelectedSheet] = useState(null);
   const [showCustom, setShowCustom]         = useState(false);
   const [showJournal, setShowJournal]       = useState(false);
+  const [showOverview, setShowOverview]     = useState(false);
   const [showAdventures, setShowAdventures] = useState(false);
   const [showRaceSelect, setShowRaceSelect] = useState(false);
   const [isFirstSetup, setIsFirstSetup]   = useState(false);
@@ -196,6 +219,13 @@ function AppContent() {
                   <Text style={{ fontSize: 20 }}>{'\u{1F5FA}\uFE0F'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  onPress={() => setShowOverview(true)}
+                  style={{ padding: 6 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={{ fontSize: 20 }}>{'\u{1F4CA}'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   onPress={() => setShowJournal(true)}
                   style={{ padding: 6 }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -218,14 +248,11 @@ function AppContent() {
             ),
           })}
         >
-          <Tab.Screen name="Status"      component={HomeScreen}          options={{ tabBarLabel: 'Status' }} />
-          <Tab.Screen name="Atributos"   component={AttributesScreen}    options={{ title: 'Atributos' }} />
-          <Tab.Screen name="Perícias"    component={SkillsScreen}        options={{ title: 'Perícias' }} />
-          <Tab.Screen name="Equip"       component={EquipmentScreen}     options={{ title: 'Equipamento', tabBarLabel: 'Equip' }} />
-          <Tab.Screen name="Habilidades" component={SkillTreeScreen}     options={{ title: 'Habilidades' }} />
-          <Tab.Screen name="Títulos"     component={TitlesScreen}        options={{ title: 'Títulos' }} />
-          <Tab.Screen name="Inventário"  component={InventoryScreen}     options={{ title: 'Inventário' }} />
-          <Tab.Screen name="Turno"       component={TurnAssistantScreen} options={{ title: 'Assistente de Turno' }} />
+          <Tab.Screen name="Personagem"  component={CharacterSection}    options={{ tabBarLabel: 'Personagem' }} />
+          <Tab.Screen name="Equipamento" component={GearSection}         options={{ tabBarLabel: 'Equipamento' }} />
+          <Tab.Screen name="Habilidades" component={AbilitySection}      options={{ tabBarLabel: 'Habilidades' }} />
+          <Tab.Screen name="Pets"        component={PetsScreen}          options={{ title: 'Pets', tabBarLabel: 'Pets' }} />
+          <Tab.Screen name="Turno"       component={TurnAssistantScreen} options={{ title: 'Assistente de Turno', tabBarLabel: 'Turno' }} />
         </Tab.Navigator>
 
         <AdventuresScreen
@@ -236,6 +263,7 @@ function AppContent() {
           sheetName={selectedSheet.name}
         />
         <JournalModal visible={showJournal} onClose={() => setShowJournal(false)} />
+        <OverviewModal visible={showOverview} onClose={() => setShowOverview(false)} />
         <RaceSelectionModal
           visible={showRaceSelect}
           onClose={handleCloseRaceSelect}
