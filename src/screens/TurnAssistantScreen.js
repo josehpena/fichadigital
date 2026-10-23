@@ -224,23 +224,62 @@ const REACTION_TITLES = {
 // Títulos que reduzem custo de mana das magias (efeito global, sem maestria)
 const MANA_REDUCE_TITLES = ['feiticeiro'];
 
-// Skills de armas (cetros, varinhas) que somam à INTENSIDADE da magia
-// source: 'attr' lê de attributes[group][subAttr]; 'skill' lê de skills[statKey]
-// Nv1 (Soma X na intensidade) e Nv2 (toggle: dobrar intensidade)
-const MAGIC_INTENSITY_WEAPON_SKILLS = {
+// Skills de armas mágicas (cetros, varinhas, bastões) que afetam a conjuração.
+// target: 'cast'      → soma na fórmula do TESTE DE CONJURAÇÃO (antes do ÷5)
+//         'intensity' → soma na INTENSIDADE (depois do ÷5)
+// source: 'attr'      → attributes[group][subAttr]       (+ tiras daquele subAttr)
+//         'attrGroup' → soma de TODOS os subAttrs de group (+ tiras deles)
+//         'skill'     → skills[statKey]                  (+ tiras daquela perícia)
+const MAGIC_WEAPON_SKILLS = {
   cetro_aghanim: {
     ascensao: {
-      nv1: { source: 'attr', group: 'concentracao', subAttr: 'inteligencia', label: 'Inteligência (Ascensão)' },
+      nv1: { target: 'intensity', source: 'attr', group: 'concentracao', subAttr: 'inteligencia', label: 'Inteligência (Ascensão)' },
       nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
+    },
+    // "O próximo teste MENTAL utiliza CONCENTRAÇÃO"
+    serenidade: {
+      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração (Serenidade)' },
+    },
+  },
+  bastao_natural: {
+    serenidade: {
+      nv1: { target: 'cast', source: 'attrGroup', group: 'concentracao', label: 'Concentração (Serenidade)' },
     },
   },
   varinha_ifurita: {
     ascensao: {
-      nv1: { source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
+      nv1: { target: 'intensity', source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
       nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
     },
   },
 };
+
+// Resolve o valor de um nv1 (base + tiras correspondentes).
+// Retorna { val, base, tiraSum }.
+function resolveMagicSkillValue(nv1, attrs, skills, allTiras) {
+  let base = 0;
+  let tiraSum = 0;
+  if (nv1.source === 'attrGroup') {
+    const group = attrs?.[nv1.group] ?? {};
+    for (const [subAttr, v] of Object.entries(group)) {
+      base += v ?? 0;
+      tiraSum += allTiras
+        .filter(t => t.tipo === 'atributo' && t.subAttr === subAttr && t.valor)
+        .reduce((s, t) => s + t.valor, 0);
+    }
+  } else if (nv1.source === 'attr') {
+    base = attrs?.[nv1.group]?.[nv1.subAttr] ?? 0;
+    tiraSum = allTiras
+      .filter(t => t.tipo === 'atributo' && t.subAttr === nv1.subAttr && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+  } else {
+    base = skills?.[nv1.statKey] ?? 0;
+    tiraSum = allTiras
+      .filter(t => t.tipo === 'pericia' && t.skill === nv1.statKey && t.valor)
+      .reduce((s, t) => s + t.valor, 0);
+  }
+  return { val: base + tiraSum, base, tiraSum };
+}
 
 // Magias cujo efeito ao nível N adiciona valor fixo à INTENSIDADE de conjuração
 const MAGIC_SPELL_INTENSITY_BONUS = {
@@ -1231,11 +1270,11 @@ function MagicPanel({ actionsLeft, onConfirm }) {
   }
   const titleBonusTotal = titleBonuses.reduce((acc, b) => acc + b.val, 0);
 
-  // Armas equipadas que têm habilidades afetando intensidade (cetros, varinhas)
+  // Armas mágicas equipadas com habilidades que afetam a conjuração.
   // Inclui tipo2 (segunda trilha da arma) também.
-  const intensityWeapons = [];
-  function collectIntensitySkills(slotKey, weaponNome, trailId) {
-    const cfg = trailId ? MAGIC_INTENSITY_WEAPON_SKILLS[trailId] : null;
+  const magicWeapons = [];
+  function collectMagicSkills(slotKey, weaponNome, trailId) {
+    const cfg = trailId ? MAGIC_WEAPON_SKILLS[trailId] : null;
     if (!cfg) return;
     const acquired = character.skillTree?.acquiredTrails?.[trailId];
     if (!acquired) return;
@@ -1250,59 +1289,45 @@ function MagicPanel({ actionsLeft, onConfirm }) {
     }
     if (skills.length > 0) {
       // chave única para evitar colisão de skills entre tipo e tipo2 do mesmo slot
-      intensityWeapons.push({ slotKey: `${slotKey}:${trailId}`, weaponNome, skills });
+      magicWeapons.push({ slotKey: `${slotKey}:${trailId}`, weaponNome, skills });
     }
   }
   for (const slotKey of HAND_SLOTS) {
     const eq = character.equipment?.[slotKey];
     if (!eq) continue;
     const nome = eq.nome || '';
-    if (eq.tipo)  collectIntensitySkills(slotKey, nome || eq.tipo,  eq.tipo);
-    if (eq.tipo2) collectIntensitySkills(slotKey, nome || eq.tipo2, eq.tipo2);
+    if (eq.tipo)  collectMagicSkills(slotKey, nome || eq.tipo,  eq.tipo);
+    if (eq.tipo2) collectMagicSkills(slotKey, nome || eq.tipo2, eq.tipo2);
   }
 
-  // Bônus FLAT de intensidade vindos de skills de arma (Nv1: soma X).
-  // O valor de X inclui as tiras correspondentes (perícia ou atributo) — assim
-  // 5 Instinto + 2 tiras de Instinto = 7 de intensidade com Ascensão.
+  // Bônus FLAT das skills de arma selecionadas, separados por onde entram.
+  // O valor inclui as tiras correspondentes — 5 Instinto + 2 tiras = 7.
+  const weaponCastBonuses      = [];
   const weaponIntensityBonuses = [];
   let hasDoubleAvailable = false;
-  for (const w of intensityWeapons) {
+  for (const w of magicWeapons) {
     const slotLevels = weaponSkillLevels[w.slotKey] ?? {};
     for (const sk of w.skills) {
       const selLv = slotLevels[sk.id] ?? 0;
       if (selLv < 1) continue;
       const nv1 = sk.cfg.nv1;
       if (nv1) {
-        let base;
-        let tiraSum = 0;
-        if (nv1.source === 'attr') {
-          base = attrs?.[nv1.group]?.[nv1.subAttr] ?? 0;
-          tiraSum = allTiras
-            .filter(t => t.tipo === 'atributo' && t.subAttr === nv1.subAttr && t.valor)
-            .reduce((s, t) => s + t.valor, 0);
-        } else {
-          base = skills?.[nv1.statKey] ?? 0;
-          tiraSum = allTiras
-            .filter(t => t.tipo === 'pericia' && t.skill === nv1.statKey && t.valor)
-            .reduce((s, t) => s + t.valor, 0);
-        }
-        const total = base + tiraSum;
-        // Duas mãos só multiplica Ascensão — outras skills de intensidade
-        // (caso adicionemos no futuro) não recebem o ×3 da empunhadura.
+        const { val: total, base, tiraSum } = resolveMagicSkillValue(nv1, attrs, skills, allTiras);
+        // Duas mãos só multiplica Ascensão — outras skills não recebem o ×3.
         const handMult = (twoHandMagic && sk.id === 'ascensao') ? 3 : 1;
         const finalVal = total * handMult;
         if (finalVal > 0) {
           const tiraNote = tiraSum > 0 ? ` (${base}+${tiraSum} tira)` : '';
           const multNote = handMult > 1 ? `×${handMult}` : '';
-          weaponIntensityBonuses.push({
-            label: `${nv1.label}${multNote}${tiraNote}`,
-            val: finalVal,
-          });
+          const entry = { label: `${nv1.label}${multNote}${tiraNote}`, val: finalVal };
+          if (nv1.target === 'cast') weaponCastBonuses.push(entry);
+          else weaponIntensityBonuses.push(entry);
         }
       }
       if (selLv >= 2 && sk.cfg.nv2?.toggleDouble) hasDoubleAvailable = true;
     }
   }
+  const weaponCastBonusTotal      = weaponCastBonuses.reduce((a, b) => a + b.val, 0);
   const weaponIntensityBonusTotal = weaponIntensityBonuses.reduce((a, b) => a + b.val, 0);
 
   // Bônus intrínseco de intensidade da própria magia (ENERGIA ARCANA Nv2: +5, Nv3: +10)
@@ -1316,7 +1341,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
     .reduce((a, v) => a + v, 0);
   const energiaAtual = character.status?.energia?.current ?? 0;
 
-  const baseCast   = raciocinio + magia + titleBonusTotal + tiraBonusTotal;
+  const baseCast   = raciocinio + magia + titleBonusTotal + tiraBonusTotal + weaponCastBonusTotal;
   const d20Value   = Math.min(20, Math.max(0, parseInt(d20Input) || 0));
   const hasD20     = d20Input.trim() !== '' && d20Value > 0;
   const totalCast  = baseCast + d20Value;
@@ -1387,6 +1412,15 @@ function MagicPanel({ actionsLeft, onConfirm }) {
               <View style={s.formulaPart}>
                 <Text style={[s.formulaVal, { color: '#a6e3a1' }]}>{b.val}</Text>
                 <Text style={s.formulaLbl}>{b.nome}</Text>
+              </View>
+            </React.Fragment>
+          ))}
+          {weaponCastBonuses.map((b, i) => (
+            <React.Fragment key={`wc-${i}`}>
+              <Text style={s.formulaOp}>+</Text>
+              <View style={s.formulaPart}>
+                <Text style={[s.formulaVal, { color: '#89dceb' }]}>{b.val}</Text>
+                <Text style={s.formulaLbl}>{b.label}</Text>
               </View>
             </React.Fragment>
           ))}
@@ -1535,7 +1569,7 @@ function MagicPanel({ actionsLeft, onConfirm }) {
       })}
 
       {/* Habilidades de Arma que afetam Intensidade (cetros, varinhas) */}
-      {intensityWeapons.length > 0 && (
+      {magicWeapons.length > 0 && (
         <>
           <Text style={s.subLabel}>Empunhadura</Text>
           <View style={s.chipRow}>
@@ -1546,9 +1580,9 @@ function MagicPanel({ actionsLeft, onConfirm }) {
               <Text style={[s.chipText, twoHandMagic && s.chipTextActive]}>Duas mãos · Ascensão ×3</Text>
             </TouchableOpacity>
           </View>
-          <Text style={s.subLabel}>Habilidades de Arma — Intensidade</Text>
-          <Text style={s.hint}>Escolha o nível a aplicar — cada nível custa 1 Energia</Text>
-          {intensityWeapons.map(w => (
+          <Text style={s.subLabel}>Habilidades de Arma Mágica</Text>
+          <Text style={s.hint}>Cada nível custa 1 Energia · Serenidade soma no teste, Ascensão na intensidade</Text>
+          {magicWeapons.map(w => (
             <View key={w.slotKey}>
               <Text style={s.weaponGroupLabel}>🪄 {w.weaponNome}</Text>
               {w.skills.map(sk => {
