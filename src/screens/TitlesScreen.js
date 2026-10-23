@@ -26,105 +26,74 @@ const TIER_LABEL = { 1: 'Nível 1', 2: 'Nível 2', 3: 'Nível 3', 4: 'Nível 4' 
 
 // ── Binding helpers ───────────────────────────────────────────────────────────
 
-// Títulos da própria cadeia de pré-requisitos (transitivo), incluindo ele mesmo.
-// As habilidades vinculadas a esses títulos podem ser REAPROVEITADAS, porque o
-// requisito do sucessor é a mesma habilidade em nível mais alto ("3 habilidades
-// em mãos livres lvl 1" no Lutador → "…lvl 2" no Monge). Sem isso as trilhas de
-// arma (3 skills cada) esgotam e o sucessor fica impossível de adquirir.
-function getChainTitleIds(titleId) {
-  const chain = new Set();
-  if (!titleId) return chain;
-  const stack = [titleId];
-  while (stack.length) {
-    const cur = stack.pop();
-    if (chain.has(cur)) continue;
-    chain.add(cur);
-    for (const p of (TITLE_PREREQS[cur] ?? [])) stack.push(p);
-  }
-  return chain;
-}
-
-function getBindableSkills(req, acquiredTrails, bindings, forTitleId = null) {
-  const reusable = getChainTitleIds(forTitleId);
-  const allBound = new Set();
-  for (const [tid, list] of Object.entries(bindings ?? {})) {
-    if (reusable.has(tid)) continue; // próprio título + cadeia de pré-requisitos
-    for (const b of list) allBound.add(`${b.trailId}:${b.skillId}`);
-  }
+// O vínculo de um título é com uma TRILHA inteira (maestria), não com habilidades
+// individuais. As habilidades só definem a ELEGIBILIDADE: para vincular, a trilha
+// precisa ter `quantidade` habilidades em nível ≥ `nivel`. Depois de vinculado, o
+// efeito do título (ex: +4 em testes de magia) vale para toda a trilha.
+// Retorna [{ id, nome, qualificadas, categoria }] — só as trilhas elegíveis.
+function getEligibleTrails(req, acquiredTrails) {
   const pool = FONTE_TRAILS[req.fonte] ?? [];
-  const byCategory = {};
+  const out = [];
   for (const trail of pool) {
     if (req.trailFixo && trail.id !== req.trailFixo) continue;
     if (req.trilhasPermitidas && !req.trilhasPermitidas.includes(trail.id)) continue;
-    const trailData = acquiredTrails[trail.id];
+    const trailData = acquiredTrails?.[trail.id];
     if (!trailData) continue;
-    for (const skill of trail.skills) {
-      const level = trailData.skills[skill.id] ?? 0;
-      if (level < req.nivel) continue;
-      if (allBound.has(`${trail.id}:${skill.id}`)) continue;
-      // mesmaTrilha: agrupa por trilha (ignora categoria mesmo se houver).
-      // Caso contrário, mantém o comportamento legado (categoria ou nome).
-      const cat = req.mesmaTrilha
-        ? trail.nome
-        : (trail.categoria ?? trail.nome);
-      if (!byCategory[cat]) byCategory[cat] = [];
-      byCategory[cat].push({
-        trailId: trail.id, skillId: skill.id,
-        nome: skill.nome, trailNome: trail.nome, level, categoria: cat,
-      });
-    }
+    const qualificadas = trail.skills.filter(
+      sk => (trailData.skills?.[sk.id] ?? 0) >= req.nivel
+    );
+    if (qualificadas.length < req.quantidade) continue;
+    out.push({
+      id: trail.id,
+      nome: trail.nome,
+      categoria: trail.categoria ?? null,
+      qualificadas: qualificadas.map(sk => sk.nome),
+    });
   }
-  return byCategory;
+  return out;
 }
 
-function hasEnoughBindable(req, acquiredTrails, bindings, forTitleId = null) {
-  const by = getBindableSkills(req, acquiredTrails, bindings, forTitleId);
-  if (req.mesmaCategoria || req.mesmaTrilha) return Object.values(by).some(a => a.length >= req.quantidade);
-  return Object.values(by).flat().length >= req.quantidade;
+function hasEligibleTrail(req, acquiredTrails) {
+  return getEligibleTrails(req, acquiredTrails).length > 0;
 }
 
-// ── Skill Binding Modal ───────────────────────────────────────────────────────
+// Lê a maestria vinculada aceitando o formato novo ({trailId}) e o antigo
+// (lista de habilidades, de fichas salvas antes dessa mudança).
+function readBoundTrail(binding) {
+  if (!binding) return null;
+  if (Array.isArray(binding)) {
+    return binding.length > 0
+      ? { trailId: binding[0].trailId, trailNome: binding[0].trailNome ?? null }
+      : null;
+  }
+  return binding.trailId ? binding : null;
+}
 
-function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, onConfirm, onCancel }) {
+// ── Trail Binding Modal ───────────────────────────────────────────────────────
+
+function TrailBindingModal({ visible, title, acquiredTrails, color, onConfirm, onCancel }) {
   const insets = useSafeAreaInsets();
   // Mesmo motivo do TitleCard: requisitoHabilidades só existe em TITLE_BY_ID.
   const req = title?.id ? (TITLE_BY_ID[title.id]?.requisitoHabilidades ?? null) : null;
-  const [selected, setSelected] = useState([]);   // [{trailId,skillId,nome}]
-  const [lockedCat, setLockedCat] = useState(null);
+  const [selected, setSelected] = useState(null);   // trailId escolhido
 
-  const byCategory = useMemo(
-    () => req ? getBindableSkills(req, acquiredTrails, bindings, title?.id) : {},
-    [req, acquiredTrails, bindings, title?.id]
+  const trilhas = useMemo(
+    () => req ? getEligibleTrails(req, acquiredTrails) : [],
+    [req, acquiredTrails]
   );
 
   if (!req || !title) return null;
 
-  const isSelected = (trailId, skillId) =>
-    selected.some(s => s.trailId === trailId && s.skillId === skillId);
-
-  const toggle = (sk) => {
-    if (isSelected(sk.trailId, sk.skillId)) {
-      const next = selected.filter(s => !(s.trailId === sk.trailId && s.skillId === sk.skillId));
-      setSelected(next);
-      if (req.mesmaCategoria && next.length === 0) setLockedCat(null);
-    } else {
-      if (selected.length >= req.quantidade) return;
-      if ((req.mesmaCategoria || req.mesmaTrilha) && lockedCat && lockedCat !== sk.categoria) return;
-      const next = [...selected, { trailId: sk.trailId, skillId: sk.skillId, nome: sk.nome }];
-      setSelected(next);
-      if ((req.mesmaCategoria || req.mesmaTrilha) && !lockedCat) setLockedCat(sk.categoria);
-    }
-  };
-
-  const canConfirm = selected.length === req.quantidade;
-
-  const handleClose = () => { setSelected([]); setLockedCat(null); onCancel(); };
+  const canConfirm = !!selected;
+  const handleClose = () => { setSelected(null); onCancel(); };
   const handleConfirm = () => {
-    if (!canConfirm) return;
-    const result = [...selected];
-    setSelected([]); setLockedCat(null);
-    onConfirm(result);
+    const t = trilhas.find(x => x.id === selected);
+    if (!t) return;
+    setSelected(null);
+    onConfirm({ trailId: t.id, trailNome: t.nome });
   };
+
+  const fonteLabel = FONTE_LABEL[req.fonte] ?? req.fonte;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
@@ -133,52 +102,42 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
           <View style={mStyles.handle} />
           <Text style={[mStyles.title, { color }]}>{title.nome}</Text>
           <Text style={mStyles.subtitle}>
-            Selecione {req.quantidade} habilidades de {FONTE_LABEL[req.fonte]} nível ≥ {req.nivel}
-            {req.trailFixo
-              ? ` da Maestria ${(FONTE_TRAILS[req.fonte] ?? []).find(t => t.id === req.trailFixo)?.nome ?? req.trailFixo}`
-              : (req.mesmaCategoria || req.mesmaTrilha) ? ' da mesma Maestria' : ''}
-            {req.trilhasPermitidas && !req.trailFixo && (
-              <Text>{'\n'}Apenas: {(FONTE_TRAILS[req.fonte] ?? []).filter(t => req.trilhasPermitidas.includes(t.id)).map(t => t.nome).join(', ')}</Text>
-            )}
+            Escolha a Maestria de {fonteLabel} que este título potencializa.
+            {'\n'}O efeito vale para TODA a maestria escolhida.
           </Text>
-          <Text style={[mStyles.count, canConfirm && { color }]}>
-            {selected.length}/{req.quantidade} selecionadas
+          <Text style={mStyles.reqNote}>
+            Requisito: {req.quantidade} habilidades em nível ≥ {req.nivel} na maestria.
           </Text>
 
           <ScrollView style={mStyles.scroll} showsVerticalScrollIndicator={false}>
-            {Object.keys(byCategory).length === 0 ? (
-              <Text style={mStyles.empty}>Nenhuma habilidade disponível para vínculo.</Text>
+            {trilhas.length === 0 ? (
+              <Text style={mStyles.empty}>
+                Nenhuma maestria de {fonteLabel} atende o requisito ainda
+                ({req.quantidade} habilidades em nível ≥ {req.nivel}).
+              </Text>
             ) : (
-              Object.entries(byCategory).map(([cat, skills]) => {
-                const catLocked = (req.mesmaCategoria || req.mesmaTrilha) && lockedCat && lockedCat !== cat;
+              trilhas.map(t => {
+                const sel = selected === t.id;
                 return (
-                  <View key={cat} style={[mStyles.catGroup, catLocked && mStyles.catGroupLocked]}>
-                    <Text style={[mStyles.catLabel, catLocked && { color: '#45475a' }]}>{cat}</Text>
-                    {skills.map(sk => {
-                      const sel = isSelected(sk.trailId, sk.skillId);
-                      const disabled = catLocked || (!sel && selected.length >= req.quantidade);
-                      return (
-                        <TouchableOpacity
-                          key={`${sk.trailId}:${sk.skillId}`}
-                          style={[
-                            mStyles.skillItem,
-                            sel && { borderColor: color, backgroundColor: color + '22' },
-                            disabled && mStyles.skillItemDisabled,
-                          ]}
-                          disabled={disabled}
-                          onPress={() => toggle(sk)}
-                        >
-                          <View style={[mStyles.check, sel && { backgroundColor: color, borderColor: color }]}>
-                            {sel && <Text style={mStyles.checkMark}>✓</Text>}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[mStyles.skillName, disabled && { color: '#45475a' }]}>{sk.nome}</Text>
-                            <Text style={mStyles.skillSub}>{sk.trailNome} · Nível {sk.level}</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      mStyles.trailItem,
+                      sel && { borderColor: color, backgroundColor: color + '22' },
+                    ]}
+                    onPress={() => setSelected(sel ? null : t.id)}
+                  >
+                    <View style={[mStyles.radio, sel && { borderColor: color }]}>
+                      {sel && <View style={[mStyles.radioDot, { backgroundColor: color }]} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[mStyles.trailName, sel && { color }]}>{t.nome}</Text>
+                      <Text style={mStyles.trailSub}>
+                        {t.qualificadas.length} hab. em nível ≥ {req.nivel}
+                        {t.categoria ? ` · ${t.categoria}` : ''}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -193,7 +152,7 @@ function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, on
               disabled={!canConfirm}
               onPress={handleConfirm}
             >
-              <Text style={[mStyles.confirmText, canConfirm && { color }]}>Confirmar</Text>
+              <Text style={[mStyles.confirmText, canConfirm && { color }]}>Vincular</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -216,24 +175,22 @@ function TitleCard({ title, color }) {
   // esse campo só é anexado em TITLE_BY_ID por buildMaps().
   const req        = TITLE_BY_ID[title.id]?.requisitoHabilidades ?? null;
 
-  const skillReqMet = !req || hasEnoughBindable(
-    req, character.skillTree.acquiredTrails, character.titles?.bindings ?? {}, title.id
-  );
+  const skillReqMet = !req || hasEligibleTrail(req, character.skillTree.acquiredTrails);
   const canAcquire = !acquired && prereqsMet && skillReqMet;
 
   const unlocksNames = (TITLE_UNLOCKS[title.id] ?? []).map(id => TITLE_BY_ID[id]?.nome).filter(Boolean);
   const prereqNames  = prereqIds.map(id => TITLE_BY_ID[id]?.nome).filter(Boolean);
-  const boundSkills  = character.titles?.bindings?.[title.id] ?? [];
-  // Título adquirido com requisito mas sem habilidades vinculadas — pode revincular
+  const boundTrail   = readBoundTrail(character.titles?.bindings?.[title.id]);
+  // Título adquirido com requisito mas sem maestria vinculada — pode vincular
   const canRebind     = acquired && !!req;
-  const missingBinding = canRebind && boundSkills.length === 0;
+  const missingBinding = canRebind && !boundTrail;
 
   const handleAcquire = () => req ? setBindingMode('acquire') : dispatch({ type: 'ACQUIRE_TITLE', titleId: title.id });
   const handleRebind  = () => setBindingMode('rebind');
 
   const acquireBtnLabel = !canAcquire
-    ? (!prereqsMet ? 'Requer título anterior' : 'Habilidades insuficientes')
-    : req ? 'Selecionar Habilidades...' : 'Adquirir Título';
+    ? (!prereqsMet ? 'Requer título anterior' : 'Nenhuma maestria elegível')
+    : req ? 'Escolher Maestria...' : 'Adquirir Título';
 
   return (
     <View style={[
@@ -288,12 +245,12 @@ function TitleCard({ title, color }) {
             </View>
           )}
 
-          {acquired && boundSkills.length > 0 && (
+          {acquired && boundTrail && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Habilidades Vinculadas</Text>
-              {boundSkills.map((b, i) => (
-                <Text key={i} style={[styles.bullet, { color: color + 'cc' }]}>🔗 {b.nome}</Text>
-              ))}
+              <Text style={styles.sectionLabel}>Maestria Vinculada</Text>
+              <Text style={[styles.bullet, { color: color + 'cc' }]}>
+                🔗 {boundTrail.trailNome ?? boundTrail.trailId}
+              </Text>
             </View>
           )}
 
@@ -303,7 +260,7 @@ function TitleCard({ title, color }) {
               onPress={handleRebind}
             >
               <Text style={[styles.rebindBtnText, missingBinding && styles.rebindBtnTextWarn]}>
-                {missingBinding ? 'Vincular Habilidades…' : 'Trocar Habilidades…'}
+                {missingBinding ? 'Vincular Maestria…' : 'Trocar Maestria…'}
               </Text>
             </TouchableOpacity>
           )}
@@ -322,19 +279,18 @@ function TitleCard({ title, color }) {
         </View>
       )}
 
-      <SkillBindingModal
+      <TrailBindingModal
         visible={!!bindingMode}
         title={title}
         acquiredTrails={character.skillTree.acquiredTrails}
-        bindings={character.titles?.bindings ?? {}}
         color={color}
-        onConfirm={skills => {
+        onConfirm={boundTrail => {
           const mode = bindingMode;
           setBindingMode(null);
           if (mode === 'rebind') {
-            dispatch({ type: 'REBIND_TITLE_SKILLS', titleId: title.id, boundSkills: skills });
+            dispatch({ type: 'REBIND_TITLE_SKILLS', titleId: title.id, boundTrail });
           } else {
-            dispatch({ type: 'ACQUIRE_TITLE', titleId: title.id, boundSkills: skills });
+            dispatch({ type: 'ACQUIRE_TITLE', titleId: title.id, boundTrail });
           }
         }}
         onCancel={() => setBindingMode(null)}
@@ -487,22 +443,25 @@ const mStyles = StyleSheet.create({
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#45475a', alignSelf: 'center', marginBottom: 14 },
   title: { fontSize: 17, fontWeight: 'bold', marginBottom: 4 },
   subtitle: { color: '#6c7086', fontSize: 12, lineHeight: 18, marginBottom: 8 },
-  count: { color: '#45475a', fontSize: 13, fontWeight: '700', marginBottom: 12 },
   scroll: { flexGrow: 0, maxHeight: 380 },
   empty: { color: '#45475a', textAlign: 'center', padding: 20 },
-  catGroup: { marginBottom: 12 },
-  catGroupLocked: { opacity: 0.4 },
-  catLabel: { color: '#89b4fa', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 },
-  skillItem: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#313244', borderRadius: 8, padding: 10, marginBottom: 6, borderWidth: 1.5, borderColor: 'transparent' },
-  skillItemDisabled: { opacity: 0.35 },
-  skillName: { color: '#cdd6f4', fontSize: 13, fontWeight: '600' },
-  skillSub: { color: '#6c7086', fontSize: 11 },
-  check: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#45475a', alignItems: 'center', justifyContent: 'center' },
-  checkMark: { color: '#11111b', fontSize: 11, fontWeight: 'bold' },
   btnRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   cancelBtn: { flex: 1, backgroundColor: '#313244', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   cancelText: { color: '#6c7086', fontWeight: '600' },
   confirmBtn: { flex: 1, backgroundColor: '#1d3052', borderRadius: 10, paddingVertical: 12, alignItems: 'center', borderWidth: 1.5, borderColor: '#89b4fa' },
   confirmBtnOff: { backgroundColor: '#1e1e2e', borderColor: '#2e2e4e' },
   confirmText: { color: '#89b4fa', fontWeight: '700' },
+  reqNote: { color: '#45475a', fontSize: 11, marginBottom: 12 },
+  trailItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#313244', borderRadius: 10, padding: 14,
+    marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent',
+  },
+  trailName: { color: '#cdd6f4', fontSize: 14, fontWeight: '700' },
+  trailSub:  { color: '#6c7086', fontSize: 11, marginTop: 2 },
+  radio: {
+    width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+    borderColor: '#45475a', alignItems: 'center', justifyContent: 'center',
+  },
+  radioDot: { width: 10, height: 10, borderRadius: 5 },
 });
