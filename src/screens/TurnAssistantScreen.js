@@ -95,12 +95,10 @@ const OBJETO_DIFICULDADE   = {
 const TAMANHO_VOLUME = { Grande: 'acima de 2m³', Médio: 'entre 1-2m³', Pequeno: 'abaixo de 1m³' };
 
 // ─── Componente de Mira ───────────────────────────────────────────────────────
-function MiraPanel({ damageTypes }) {
-  const [tipoAlvo, setTipoAlvo]   = useState(null);  // 'humanoide' | 'objeto'
-  const [alvoId, setAlvoId]       = useState(null);
-  const [objTam, setObjTam]       = useState('Médio');
-  const [objVeloc, setObjVeloc]   = useState('Normal');
-
+// Estado controlado pelo AttackPanel: a fórmula de acerto só existe quando há
+// um alvo mirado, e o alvo precisa ser limpo ao trocar de arma (um alvo
+// "requer Cortante" ficava preso ao mudar para uma arma Perfurante).
+function MiraPanel({ damageTypes, tipoAlvo, setTipoAlvo, alvoId, setAlvoId, objTam, setObjTam, objVeloc, setObjVeloc }) {
   const dificuldadeObj = OBJETO_DIFICULDADE[`${objTam}-${objVeloc}`] ?? 20;
   const alvoHum = ALVOS_HUMANOIDE.find(a => a.id === alvoId);
   const isCortante = damageTypes.includes('Cortante');
@@ -288,10 +286,11 @@ const MAGIC_SPELL_INTENSITY_BONUS = {
   },
 };
 
-// Habilidades que adicionam stats ao BLOQUEIO
-// confronto Nv1 = vigor incondicional; Nv2 = robustez condicional (mostramos mas não somamos)
-// bloqueador Nv1 = briga (condicional: "se briga < bloqueio base")
-// fatiador Nv1 = armasBrancas (dano E bloqueio)
+// Habilidades de arma que somam stats ao BLOQUEIO.
+// Todas são habilidades de arma: só valem com o nível selecionado (minLevel).
+// fatiador   Nv1 = Instinto (também soma no dano), ×2 quando selecionado Nv3
+// bloqueador Nv1 = Instinto
+// confronto  Nv1 = Vigor; Nv2 = Robustez condicional (exibida, não somada)
 // source: 'skill' lê de character.skills; 'attr' lê de character.attributes[group][subAttr]
 const WEAPON_SKILL_BLOCK_MODS = {
   fatiador:   { minLevel: 1, source: 'skill', statKey: 'instinto', statLabel: 'Instinto',
@@ -496,6 +495,18 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
   const [twoHand,   setTwoHand]   = useState(false);
   // { [skillId]: selectedLevel }  — 0 = não usar
   const [skillLevels, setSkillLevels] = useState({});
+  // Mira: estado levantado para cá porque o acerto só é rolado quando se mira
+  const [tipoAlvo, setTipoAlvo] = useState(null);  // 'humanoide' | 'objeto'
+  const [alvoId, setAlvoId]     = useState(null);
+  const [objTam, setObjTam]     = useState('Médio');
+  const [objVeloc, setObjVeloc] = useState('Normal');
+
+  function clearMira() {
+    setTipoAlvo(null);
+    setAlvoId(null);
+    setObjTam('Médio');
+    setObjVeloc('Normal');
+  }
 
   const weapons = HAND_SLOTS
     .map(k => ({ key: k, label: EQUIP_LABELS[k], equip: character.equipment[k] }))
@@ -543,14 +554,17 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
         total: forca + nivel,
       };
     }
-    // Corpo a corpo: Armas Brancas é usada para MIRAR, não entra no dano.
-    if (!ranged) {
+    // Corpo a corpo: o acerto só é rolado quando se MIRA num alvo específico.
+    // Armas Brancas serve para mirar, não entra no dano.
+    if (!ranged && (alvoId || tipoAlvo === 'objeto')) {
       acertoFormula = {
+        mira: true,
         partes: [
+          { label: 'Destreza', val: destreza },
           { label: 'Armas Brancas', val: armasBrancas },
           { label: 'd20', val: 'd20', dado: true },
         ],
-        total: armasBrancas,
+        total: destreza + armasBrancas,
       };
     }
   }
@@ -597,6 +611,11 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
     for (const t of allTiras) {
       if (!t.valor) continue;
       if (t.tipo === 'atributo') {
+        // Destreza alimenta o acerto de mira no corpo a corpo, não o dano.
+        if (!ranged && t.subAttr === 'destreza' && acertoFormula?.mira) {
+          bump(acertoAcc, `${ATTRIBUTE_LABELS.destreza} (tira)`, t.valor);
+          continue;
+        }
         const mult = (twoHand && t.subAttr === 'forca') ? 2 : 1;
         const nome = ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr;
         bump(dmgAcc, mult > 1 ? `${nome}×2 (tira)` : `${nome} (tira)`, t.valor * mult);
@@ -685,7 +704,7 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
               <TouchableOpacity
                 key={w.key}
                 style={[s.chip, selSlot === w.key && s.chipActive]}
-                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSkillLevels({}); }}
+                onPress={() => { setSelSlot(w.key); setTwoHand(false); setSkillLevels({}); clearMira(); }}
               >
                 <Text style={[s.chipText, selSlot === w.key && s.chipTextActive]}>
                   {w.equip.nome || w.label}
@@ -715,7 +734,9 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
 
       {acertoFormula && (
         <View style={s.formulaCard}>
-          <Text style={s.formulaTitle}>🎯 Teste de Acerto</Text>
+          <Text style={s.formulaTitle}>
+            {acertoFormula.mira ? '🎯 Teste de Acerto (Mira)' : '🎯 Teste de Acerto'}
+          </Text>
           <View style={s.formulaParts}>
             {acertoFormula.partes.map((p, i) => (
               <React.Fragment key={i}>
@@ -754,7 +775,13 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
               <Text style={s.formulaLbl}>Total</Text>
             </View>
           </View>
-          {!ranged && <Text style={s.formulaNote}>Acerto rolado separado (ver 🎯 acima)</Text>}
+          {!ranged && (
+            <Text style={s.formulaNote}>
+              {acertoFormula?.mira
+                ? 'Acerto rolado separado (ver 🎯 acima)'
+                : 'Sem mira: role o d20 de acerto normalmente'}
+            </Text>
+          )}
         </View>
       )}
 
@@ -813,7 +840,13 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
 
       {/* Mira */}
       {weapon && (
-        <MiraPanel damageTypes={getWeaponDamageTypes(weapon.tipo)} />
+        <MiraPanel
+          damageTypes={getWeaponDamageTypes(weapon.tipo)}
+          tipoAlvo={tipoAlvo} setTipoAlvo={setTipoAlvo}
+          alvoId={alvoId} setAlvoId={setAlvoId}
+          objTam={objTam} setObjTam={setObjTam}
+          objVeloc={objVeloc} setObjVeloc={setObjVeloc}
+        />
       )}
 
       {/* Efeitos aplicados */}
