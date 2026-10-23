@@ -939,8 +939,9 @@ function reducer(state, action) {
       }
 
       const newBindings = { ...(state.titles?.bindings ?? {}) };
-      if (action.boundSkills?.length > 0) {
-        newBindings[action.titleId] = action.boundSkills; // [{trailId, skillId, nome}]
+      if (action.boundTrail?.trailId) {
+        // { trailId, trailNome } — o título potencializa a maestria inteira
+        newBindings[action.titleId] = action.boundTrail;
       }
 
       return {
@@ -956,15 +957,15 @@ function reducer(state, action) {
       };
     }
 
-    // { titleId, boundSkills } — re-vincula habilidades a um título já adquirido.
-    // Usado quando o título foi adquirido sem binding ou para trocar a maestria
-    // escolhida (ex: trocar a maestria do +4 do Aprendiz de Conjurador).
+    // { titleId, boundTrail } — vincula/troca a maestria de um título já adquirido.
+    // Usado quando o título foi adquirido sem vínculo ou para mudar a maestria
+    // potencializada (ex: trocar o alvo do +4 do Aprendiz de Conjurador).
     case 'REBIND_TITLE_SKILLS': {
       if (!(state.titles?.acquired ?? []).includes(action.titleId)) return state;
       const oldBindings = state.titles?.bindings ?? {};
       const newBindings = { ...oldBindings };
-      if (action.boundSkills?.length > 0) {
-        newBindings[action.titleId] = action.boundSkills;
+      if (action.boundTrail?.trailId) {
+        newBindings[action.titleId] = action.boundTrail;
       } else {
         delete newBindings[action.titleId];
       }

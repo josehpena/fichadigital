@@ -283,13 +283,16 @@ export const MAGIC_BONUS_TITLES = [
 ];
 
 // Retorna o trailId da maestria de magia em que o título dá bônus,
-// ou null se o título ainda não foi adquirido com binding.
+// ou null se o título ainda não foi vinculado a nenhuma.
+// Aceita o formato atual do vínculo ({ trailId, trailNome }) e o antigo
+// (lista de habilidades), de fichas salvas antes da mudança.
 export function getTitleMagicMaestria(titleId, bindings) {
   const req = REQUISITO_HABILIDADES[titleId];
   if (req?.trailFixo) return req.trailFixo;
   const bound = bindings?.[titleId];
-  if (bound && bound.length > 0) return bound[0].trailId;
-  return null;
+  if (!bound) return null;
+  if (Array.isArray(bound)) return bound.length > 0 ? bound[0].trailId : null;
+  return bound.trailId ?? null;
 }
 
 // ── Build maps ─────────────────────────────────────────────────────────────────
