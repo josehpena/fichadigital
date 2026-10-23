@@ -97,6 +97,10 @@ export const INITIAL_CHARACTER = {
     // acquiredTrails format: { trailId: { cost: number, skills: { skillId: level } } }
     customCosts: {},
     // customCosts format: { trailId: number } — custo XP/nível personalizado antes de adquirir
+    freedCosts: [],
+    // freedCosts: number[] — custos liberados ao desaprender trilhas. A próxima
+    // trilha adquirida ocupa a vaga mais barata da lista em vez de pagar o
+    // próximo valor da progressão. Trilhas já aprendidas não são afetadas.
   },
 
   titles: {

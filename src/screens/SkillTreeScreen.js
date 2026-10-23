@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Modal, Pressable, TextInput,
+  StyleSheet, Modal, Pressable, TextInput, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCharacter } from '../context/CharacterContext';
@@ -74,7 +74,7 @@ function xpCostForRange(fromLevel, toLevel, costPerLevel) {
 
 // ── Trail Cost Edit Modal ────────────────────────────────────────────────────
 
-function TrailCostModal({ trail, currentCost, onClose }) {
+function TrailCostModal({ trail, currentCost, acquired, onClose }) {
   const { dispatch } = useCharacter();
   const insets = useSafeAreaInsets();
   const [val, setVal] = useState(String(currentCost));
@@ -83,6 +83,29 @@ function TrailCostModal({ trail, currentCost, onClose }) {
     const n = parseInt(val, 10);
     if (n > 0) dispatch({ type: 'SET_TRAIL_COST', trailId: trail.id, cost: n });
     onClose();
+  };
+
+  const unlearn = () => {
+    const emBloco = trail.categoria
+      ? `\n\nA categoria ${trail.categoria} foi adquirida em bloco, então todas as trilhas dela saem juntas.`
+      : '';
+    Alert.alert(
+      `Desaprender ${trail.nome}?`,
+      `Os níveis de habilidade dessa trilha serão perdidos (o XP não é devolvido).\n\n`
+      + `A vaga de ${currentCost} XP volta a ficar livre: a PRÓXIMA trilha que você aprender vai custar ${currentCost} XP em vez do próximo valor da progressão. As trilhas que você já tem não mudam de preço.`
+      + emBloco,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desaprender',
+          style: 'destructive',
+          onPress: () => {
+            dispatch({ type: 'UNLEARN_TRAIL', trailId: trail.id });
+            onClose();
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -106,6 +129,11 @@ function TrailCostModal({ trail, currentCost, onClose }) {
           <TouchableOpacity style={styles.costEditSaveBtn} onPress={save}>
             <Text style={styles.costEditSaveBtnText}>Salvar</Text>
           </TouchableOpacity>
+          {acquired && (
+            <TouchableOpacity style={styles.unlearnTrailBtn} onPress={unlearn}>
+              <Text style={styles.unlearnTrailBtnText}>Desaprender trilha</Text>
+            </TouchableOpacity>
+          )}
         </Pressable>
       </Pressable>
     </Modal>
@@ -122,10 +150,17 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
   const acquired     = !!trailData;
   const customCost   = character.skillTree.customCosts?.[trail.id];
   const baseCost     = trailData?.cost ?? customCost ?? nextTrailCost;
+  // Vaga liberada por desaprender tem precedência sobre progressão e desconto
+  const freedNext    = (character.skillTree.freedCosts ?? []);
+  const freedCheapest = freedNext.length > 0 ? Math.min(...freedNext) : null;
   // Desconto racial (Azunam) — só em trilhas ainda não adquiridas e sem custo customizado
-  const trailCost    = (!acquired && customCost == null)
-    ? raceTrailDiscountedCost(character.race, character.skillTree.acquiredTrails, trail.id, baseCost)
-    : baseCost;
+  const trailCost    = acquired
+    ? baseCost
+    : (customCost != null
+        ? customCost
+        : (freedCheapest != null
+            ? freedCheapest
+            : raceTrailDiscountedCost(character.race, character.skillTree.acquiredTrails, trail.id, baseCost)));
   const hasDiscount  = trailCost < baseCost;
   const totalLevels  = trailData
     ? Object.values(trailData.skills).reduce((s, v) => s + v, 0)
@@ -137,6 +172,7 @@ function TrailCard({ trail, nextTrailCost, color, onSelectSkillDetail }) {
         <TrailCostModal
           trail={trail}
           currentCost={trailCost}
+          acquired={acquired}
           onClose={() => setEditingCost(false)}
         />
       )}
@@ -311,13 +347,19 @@ export default function SkillTreeScreen() {
   const [activeTab, setActiveTab] = useState('profissoes');
   const [skillDetail, setSkillDetail] = useState(null);
 
+  const freedCosts = character.skillTree.freedCosts ?? [];
+  // Vaga liberada por desaprender tem precedência sobre a progressão normal
+  // e já carrega o preço histórico (sem reaplicar desconto racial).
+  const freedNext = freedCosts.length > 0 ? Math.min(...freedCosts) : null;
   const nextTrailCost = trailAcquisitionCost(character.skillTree.trailCount);
   const tab = CATEGORY_TABS.find(t => t.key === activeTab);
 
   // Desconto racial (Azunam) para a categoria da aba ativa
-  const nextTrailDiscounted = tab.trails.length > 0
-    ? raceTrailDiscountedCost(character.race, character.skillTree.acquiredTrails, tab.trails[0].id, nextTrailCost)
-    : nextTrailCost;
+  const nextTrailDiscounted = freedNext != null
+    ? freedNext
+    : (tab.trails.length > 0
+        ? raceTrailDiscountedCost(character.race, character.skillTree.acquiredTrails, tab.trails[0].id, nextTrailCost)
+        : nextTrailCost);
   const nextHasDiscount = nextTrailDiscounted < nextTrailCost;
 
   const totalAcquired = Object.keys(character.skillTree.acquiredTrails).length;
@@ -371,6 +413,17 @@ export default function SkillTreeScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Vagas liberadas por desaprender trilhas */}
+      {freedCosts.length > 0 && (
+        <View style={styles.freedBanner}>
+          <Text style={styles.freedBannerText}>
+            ♻️ {freedCosts.length === 1 ? 'Vaga livre' : 'Vagas livres'} de {
+              [...freedCosts].sort((a, b) => a - b).join(', ')
+            } XP (de trilha desaprendida). A próxima trilha que você aprender custa {freedNext} XP.
+          </Text>
+        </View>
+      )}
 
       {/* Trail list */}
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
@@ -526,4 +579,16 @@ const styles = StyleSheet.create({
     borderColor: '#89b4fa', paddingVertical: 12, alignItems: 'center',
   },
   costEditSaveBtnText: { color: '#89b4fa', fontWeight: '700', fontSize: 14 },
+
+  unlearnTrailBtn: {
+    marginTop: 10, paddingVertical: 11, borderRadius: 10, alignItems: 'center',
+    backgroundColor: '#2d1b24', borderWidth: 1, borderColor: '#f38ba8',
+  },
+  unlearnTrailBtnText: { color: '#f38ba8', fontWeight: '700', fontSize: 14 },
+
+  freedBanner: {
+    marginHorizontal: 12, marginBottom: 8, padding: 10, borderRadius: 8,
+    backgroundColor: '#2d2d1e', borderLeftWidth: 3, borderLeftColor: '#f9e2af',
+  },
+  freedBannerText: { color: '#f9e2af', fontSize: 11, lineHeight: 16 },
 });

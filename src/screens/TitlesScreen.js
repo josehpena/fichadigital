@@ -87,7 +87,8 @@ function hasEnoughBindable(req, acquiredTrails, bindings, forTitleId = null) {
 
 function SkillBindingModal({ visible, title, acquiredTrails, bindings, color, onConfirm, onCancel }) {
   const insets = useSafeAreaInsets();
-  const req = title?.requisitoHabilidades;
+  // Mesmo motivo do TitleCard: requisitoHabilidades só existe em TITLE_BY_ID.
+  const req = title?.id ? (TITLE_BY_ID[title.id]?.requisitoHabilidades ?? null) : null;
   const [selected, setSelected] = useState([]);   // [{trailId,skillId,nome}]
   const [lockedCat, setLockedCat] = useState(null);
 
@@ -211,7 +212,9 @@ function TitleCard({ title, color }) {
   const acquired   = character.titles?.acquired?.includes(title.id) ?? false;
   const prereqIds  = TITLE_PREREQS[title.id] ?? [];
   const prereqsMet = prereqIds.every(id => character.titles?.acquired?.includes(id));
-  const req        = title.requisitoHabilidades;
+  // `title` chega cru de CATEGORIAS_RAW, que não carrega requisitoHabilidades —
+  // esse campo só é anexado em TITLE_BY_ID por buildMaps().
+  const req        = TITLE_BY_ID[title.id]?.requisitoHabilidades ?? null;
 
   const skillReqMet = !req || hasEnoughBindable(
     req, character.skillTree.acquiredTrails, character.titles?.bindings ?? {}, title.id
