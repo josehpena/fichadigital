@@ -214,6 +214,15 @@ export const EQUIP_LABELS = {
 export const COMPUTED_STATUS_KEYS = ['vida', 'energia', 'mana', 'forcaDeVontade'];
 export const NO_MAX_STATUS_KEYS   = ['xp'];
 
+// Custo de aquisição da próxima maestria (trilha), dado quantas o personagem
+// já possui. Progressão: 40, 80, 120, 160… (+40 por trilha já adquirida).
+// Esse mesmo valor passa a ser o custo de XP por nível das habilidades da
+// trilha (gravado em acquiredTrails[id].cost).
+export const FIRST_TRAIL_COST = 40;
+export function trailAcquisitionCost(trailCount = 0) {
+  return FIRST_TRAIL_COST * (Math.max(0, trailCount) + 1);
+}
+
 // Custo total de XP para subir do nível `from` até o nível `to`
 // Cada nível intermediário custa: novoNível × costPerLevel
 export function xpCostForRange(fromLevel, toLevel, costPerLevel) {
