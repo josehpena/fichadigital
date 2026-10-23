@@ -233,7 +233,7 @@ const MANA_REDUCE_TITLES = ['feiticeiro'];
 const MAGIC_WEAPON_SKILLS = {
   cetro_aghanim: {
     ascensao: {
-      nv1: { target: 'intensity', source: 'attr', group: 'concentracao', subAttr: 'inteligencia', label: 'Inteligência (Ascensão)' },
+      nv1: { target: 'intensity', source: 'skill', statKey: 'instinto', label: 'Instinto (Ascensão)' },
       nv2: { toggleDouble: true, label: 'Dobrar intensidade (Ascensão Nv2)' },
     },
     // "O próximo teste MENTAL utiliza CONCENTRAÇÃO"
@@ -347,8 +347,8 @@ function getBlockBonuses(blockWeapons, allLevels, characterSkills, characterAttr
 // minLevel = nível mínimo selecionado para o bônus entrar
 // tripleInTwoHand = true para respeitar a regra "perícia×3 em 2 mãos"
 const WEAPON_SKILL_DAMAGE_MODS = {
-  // fatiador (machado_do_norte + luvas_de_batalha): soma Instinto no dano
-  // Nv3 duplica efeitos do Nv1 → multiplicador 2 quando selLv >= 3
+  // fatiador (machado_do_norte + luvas_de_batalha): soma Instinto no dano,
+  // e só quando a habilidade é efetivamente usada (nível selecionado ≥ 1).
   fatiador: { minLevel: 1, statKey: 'instinto', label: 'Instinto', tripleInTwoHand: true,
     multiplier: (selLv) => selLv >= 3 ? 2 : 1 },
   // fighter (luvas_de_batalha) Nv2: soma Instinto em acerto e dano
@@ -537,11 +537,20 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
     } else {
       formula = {
         partes: [
-          { label: 'Armas Brancas', val: armasBrancas },
           { label: 'Força', val: forca },
           { label: `Nível (${nivel})`, val: nivel },
         ],
-        total: armasBrancas + forca + nivel,
+        total: forca + nivel,
+      };
+    }
+    // Corpo a corpo: Armas Brancas é usada para MIRAR, não entra no dano.
+    if (!ranged) {
+      acertoFormula = {
+        partes: [
+          { label: 'Armas Brancas', val: armasBrancas },
+          { label: 'd20', val: 'd20', dado: true },
+        ],
+        total: armasBrancas,
       };
     }
   }
@@ -579,39 +588,50 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
       for (const t of (acc.tiras ?? [])) allTiras.push(t);
     }
 
+    // Agrega por rótulo antes de empurrar, para que 3 tiras de 1 apareçam como
+    // um termo "3 X (tira)" em vez de três termos de "1 X (tira)".
+    const dmgAcc    = {};
+    const acertoAcc = {};
+    const bump = (acc, label, val) => { acc[label] = (acc[label] ?? 0) + val; };
+
     for (const t of allTiras) {
-      if (t.tipo === 'atributo' && t.valor) {
+      if (!t.valor) continue;
+      if (t.tipo === 'atributo') {
         const mult = (twoHand && t.subAttr === 'forca') ? 2 : 1;
-        const val = t.valor * mult;
-        const lbl = mult > 1
-          ? `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr}×2 (tira)`
-          : `${ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr} (tira)`;
-        formula.partes.push({ label: lbl, val });
-        formula.total += val;
-      } else if (t.tipo === 'pericia' && t.skill === 'armasBrancas' && t.valor) {
-        const mult = twoHand ? 3 : 1;
-        const val = t.valor * mult;
-        const lbl = mult > 1
-          ? `${SKILL_LABELS[t.skill] ?? t.skill}×3 (tira)`
-          : `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`;
-        formula.partes.push({ label: lbl, val });
-        formula.total += val;
-      } else if (t.tipo === 'pericia' && t.skill !== 'armasBrancas' && t.valor) {
-        formula.partes.push({ label: `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`, val: t.valor });
-        formula.total += t.valor;
+        const nome = ATTRIBUTE_LABELS[t.subAttr] ?? t.subAttr;
+        bump(dmgAcc, mult > 1 ? `${nome}×2 (tira)` : `${nome} (tira)`, t.valor * mult);
+      } else if (t.tipo === 'pericia' && t.skill === 'armasBrancas') {
+        // Armas Brancas serve para mirar — vai no acerto, não no dano.
+        if (!ranged) bump(acertoAcc, `${SKILL_LABELS.armasBrancas} (tira)`, t.valor);
+      } else if (t.tipo === 'pericia') {
+        bump(dmgAcc, `${SKILL_LABELS[t.skill] ?? t.skill} (tira)`, t.valor);
       }
     }
 
     // Tiras de acerto para ranged
-    if (ranged && acertoFormula) {
+    if (ranged) {
       for (const t of allTiras) {
-        if (t.tipo === 'atributo' && t.valor && t.subAttr === 'destreza') {
-          acertoFormula.partes.push({ label: `${ATTRIBUTE_LABELS[t.subAttr]} (tira)`, val: t.valor });
-          acertoFormula.total += t.valor;
-        } else if (t.tipo === 'pericia' && t.valor && t.skill === 'armasRange') {
-          acertoFormula.partes.push({ label: `${SKILL_LABELS[t.skill]} (tira)`, val: t.valor });
-          acertoFormula.total += t.valor;
+        if (!t.valor) continue;
+        if (t.tipo === 'atributo' && t.subAttr === 'destreza') {
+          bump(acertoAcc, `${ATTRIBUTE_LABELS.destreza} (tira)`, t.valor);
+        } else if (t.tipo === 'pericia' && t.skill === 'armasRange') {
+          bump(acertoAcc, `${SKILL_LABELS.armasRange} (tira)`, t.valor);
         }
+      }
+    }
+
+    for (const [label, val] of Object.entries(dmgAcc)) {
+      formula.partes.push({ label, val });
+      formula.total += val;
+    }
+    if (acertoFormula) {
+      // insere antes do d20 para a linha terminar no dado
+      const dadoIdx = acertoFormula.partes.findIndex(p => p.dado);
+      const extras = Object.entries(acertoAcc).map(([label, val]) => ({ label, val }));
+      if (extras.length > 0) {
+        if (dadoIdx >= 0) acertoFormula.partes.splice(dadoIdx, 0, ...extras);
+        else acertoFormula.partes.push(...extras);
+        for (const e of extras) acertoFormula.total += e.val;
       }
     }
   }
@@ -734,7 +754,7 @@ function AttackPanel({ actionsLeft, onConfirm, blockedThisTurn }) {
               <Text style={s.formulaLbl}>Total</Text>
             </View>
           </View>
-          {!ranged && <Text style={s.formulaNote}>+ d20 de acerto (role separado)</Text>}
+          {!ranged && <Text style={s.formulaNote}>Acerto rolado separado (ver 🎯 acima)</Text>}
         </View>
       )}
 
