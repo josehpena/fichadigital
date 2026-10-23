@@ -37,6 +37,37 @@ function applyRaceTrailDiscount(state, trailId, baseCost) {
   return raceTrailDiscountedCost(state.race, state.skillTree.acquiredTrails, trailId, baseCost);
 }
 
+// Resolve o custo de ocupar a próxima vaga de maestria, em ordem de precedência:
+//   1. custo herdado de uma trilha irmã da mesma categoria (não é vaga nova)
+//   2. custo personalizado definido pelo jogador para essa trilha
+//   3. vaga liberada por desaprender uma trilha (a mais barata da lista)
+//   4. progressão normal (40 por trilha já possuída) + desconto racial
+// Retorna { cost, freedCosts } — freedCosts já sem a vaga consumida, se houver.
+function resolveTrailSlotCost(state, trail, trailId) {
+  const freed = [...(state.skillTree.freedCosts ?? [])];
+
+  if (trail?.categoria) {
+    const sibling = findCategoryTrails(trail.categoria)
+      .find(ct => state.skillTree.acquiredTrails[ct.id]);
+    if (sibling) {
+      return { cost: state.skillTree.acquiredTrails[sibling.id].cost, freedCosts: freed };
+    }
+  }
+
+  const custom = state.skillTree.customCosts?.[trailId];
+  if (custom) return { cost: custom, freedCosts: freed };
+
+  if (freed.length > 0) {
+    // Vaga liberada já carrega o preço histórico — não reaplica desconto racial.
+    const cheapest = Math.min(...freed);
+    freed.splice(freed.indexOf(cheapest), 1);
+    return { cost: cheapest, freedCosts: freed };
+  }
+
+  const base = trailAcquisitionCost(state.skillTree.trailCount);
+  return { cost: applyRaceTrailDiscount(state, trailId, base), freedCosts: freed };
+}
+
 // Impacto de cada subatributo nos tetos de status
 const ATTR_STATUS_IMPACT = {
   forca:        { vida: 1, forcaDeVontade: 1 },
@@ -703,8 +734,7 @@ function reducer(state, action) {
       if (state.skillTree.acquiredTrails[action.trailId]) return state; // already acquired
       const trail = findTrail(action.trailId);
       if (!trail) return state;
-      const baseCost = trailAcquisitionCost(state.skillTree.trailCount);
-      const nextCost = applyRaceTrailDiscount(state, action.trailId, baseCost);
+      const { cost: nextCost, freedCosts } = resolveTrailSlotCost(state, trail, action.trailId);
       if (state.status.xp.current < nextCost) return state;
       const newXp = { ...state.status.xp, current: state.status.xp.current - nextCost };
       return {
@@ -713,6 +743,7 @@ function reducer(state, action) {
         skillTree: {
           ...state.skillTree,
           trailCount: state.skillTree.trailCount + 1,
+          freedCosts,
           acquiredTrails: {
             ...state.skillTree.acquiredTrails,
             [action.trailId]: { cost: nextCost, skills: {} },
@@ -732,27 +763,13 @@ function reducer(state, action) {
       let trailData = state.skillTree.acquiredTrails[action.trailId];
       let newSkillTree = state.skillTree;
       if (!trailData) {
-        // Se pertence a uma categoria, reutiliza o custo de outra trilha já adquirida
-        let nextCost = trailAcquisitionCost(state.skillTree.trailCount);
-        if (trail.categoria) {
-          const catTrails = findCategoryTrails(trail.categoria);
-          const existing = catTrails.find(ct => state.skillTree.acquiredTrails[ct.id]);
-          if (existing) nextCost = state.skillTree.acquiredTrails[existing.id].cost;
-        }
-        // Respeita custo personalizado definido antes da aquisição
-        if (!trail.categoria || !nextCost) {
-          nextCost = state.skillTree.customCosts?.[action.trailId] ?? nextCost;
-        }
-        // Desconto racial (Azunam): só aplica se não veio de categoria/customCost,
-        // pois esses já trazem um custo decidido pelo jogador.
-        if (!trail.categoria && !state.skillTree.customCosts?.[action.trailId]) {
-          nextCost = applyRaceTrailDiscount(state, action.trailId, nextCost);
-        }
+        const { cost: nextCost, freedCosts } = resolveTrailSlotCost(state, trail, action.trailId);
 
         trailData = { cost: nextCost, skills: {} };
         newSkillTree = {
           ...state.skillTree,
           trailCount: state.skillTree.trailCount + 1,
+          freedCosts,
           acquiredTrails: {
             ...state.skillTree.acquiredTrails,
             [action.trailId]: trailData,
@@ -816,6 +833,38 @@ function reducer(state, action) {
             ...state.skillTree.acquiredTrails,
             [action.trailId]: { ...trailData, skills: newSkills },
           },
+        },
+      };
+    }
+
+    // { trailId } — desaprende a trilha inteira. O custo que ela tinha volta
+    // para a lista de vagas livres, então a PRÓXIMA trilha adquirida paga esse
+    // valor em vez do próximo da progressão. Trilhas já aprendidas não mudam.
+    // Trilhas com categoria foram adquiridas em bloco (1 vaga) e saem em bloco.
+    case 'UNLEARN_TRAIL': {
+      const trail = findTrail(action.trailId);
+      if (!trail) return state;
+      const data = state.skillTree.acquiredTrails[action.trailId];
+      if (!data) return state;
+
+      const ids = trail.categoria
+        ? findCategoryTrails(trail.categoria).map(t => t.id)
+        : [action.trailId];
+
+      const newAcquired = { ...state.skillTree.acquiredTrails };
+      let removed = 0;
+      for (const id of ids) {
+        if (newAcquired[id]) { delete newAcquired[id]; removed++; }
+      }
+      if (removed === 0) return state;
+
+      return {
+        ...state,
+        skillTree: {
+          ...state.skillTree,
+          acquiredTrails: newAcquired,
+          trailCount: Math.max(0, (state.skillTree.trailCount ?? 0) - 1),
+          freedCosts: [...(state.skillTree.freedCosts ?? []), data.cost],
         },
       };
     }
