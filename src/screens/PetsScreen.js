@@ -15,6 +15,37 @@ const TIPOS = {
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
+// ── Campo numérico digitável ────────────────────────────────────────────────
+// Mantém o texto em estado local enquanto edita e só comita no blur/submit,
+// para o clamp não atropelar a digitação (ex: digitar "1000" passando por "1").
+function NumField({ value, onCommit, style, maxLength = 5 }) {
+  const [txt, setTxt] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => { if (!editing) setTxt(String(value)); }, [value, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const n = parseInt(txt, 10);
+    if (Number.isNaN(n)) { setTxt(String(value)); return; }
+    onCommit(n);
+  };
+
+  return (
+    <TextInput
+      style={style}
+      value={txt}
+      onChangeText={(v) => setTxt(v.replace(/[^0-9]/g, '').slice(0, maxLength))}
+      onFocus={() => setEditing(true)}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      keyboardType="number-pad"
+      returnKeyType="done"
+      selectTextOnFocus
+    />
+  );
+}
+
 // ── Stepper de status (atual / máx) ──────────────────────────────────────────
 function StatEditor({ icon, label, color, stat, onChange }) {
   const cur = stat?.current ?? 0;
@@ -33,7 +64,7 @@ function StatEditor({ icon, label, color, stat, onChange }) {
         <TouchableOpacity style={s.statBtn} onPress={() => setCur(cur - 1)}>
           <Text style={s.statBtnText}>−</Text>
         </TouchableOpacity>
-        <Text style={[s.statVal, { color }]}>{cur}</Text>
+        <NumField value={cur} onCommit={setCur} style={[s.statVal, s.statValInput, { color }]} />
         <TouchableOpacity style={s.statBtn} onPress={() => setCur(cur + 1)}>
           <Text style={s.statBtnText}>+</Text>
         </TouchableOpacity>
@@ -43,7 +74,7 @@ function StatEditor({ icon, label, color, stat, onChange }) {
         <TouchableOpacity style={s.statBtnSm} onPress={() => setMax(max - 1)}>
           <Text style={s.statBtnTextSm}>−</Text>
         </TouchableOpacity>
-        <Text style={s.statMax}>{max}</Text>
+        <NumField value={max} onCommit={setMax} style={[s.statMax, s.statMaxInput]} />
         <TouchableOpacity style={s.statBtnSm} onPress={() => setMax(max + 1)}>
           <Text style={s.statBtnTextSm}>+</Text>
         </TouchableOpacity>
@@ -573,10 +604,18 @@ const s = StyleSheet.create({
   statBtn:      { width: 32, height: 32, borderRadius: 8, backgroundColor: '#2a2a3e', borderWidth: 1, borderColor: '#45475a', alignItems: 'center', justifyContent: 'center' },
   statBtnText:  { color: '#cdd6f4', fontSize: 18, fontWeight: '700', lineHeight: 22 },
   statVal:      { fontSize: 17, fontWeight: 'bold', minWidth: 26, textAlign: 'center' },
+  statValInput: {
+    minWidth: 52, paddingVertical: 2, paddingHorizontal: 4,
+    borderBottomWidth: 1, borderBottomColor: '#45475a',
+  },
   statSlash:    { color: '#45475a', fontSize: 14, marginHorizontal: 2 },
   statBtnSm:    { width: 26, height: 26, borderRadius: 6, backgroundColor: '#181825', borderWidth: 1, borderColor: '#313244', alignItems: 'center', justifyContent: 'center' },
   statBtnTextSm:{ color: '#6c7086', fontSize: 14, fontWeight: '700', lineHeight: 16 },
   statMax:      { color: '#6c7086', fontSize: 14, fontWeight: '600', minWidth: 22, textAlign: 'center' },
+  statMaxInput: {
+    minWidth: 48, paddingVertical: 2, paddingHorizontal: 4,
+    borderBottomWidth: 1, borderBottomColor: '#313244',
+  },
 
   // Características
   caracRow:    { flexDirection: 'row', alignItems: 'center', backgroundColor: '#181825', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 7, marginBottom: 5 },
